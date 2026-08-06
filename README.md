@@ -35,6 +35,13 @@ Never commit a real key.
 
 The free router is for development/testing, not our production reliability target.
 
+## HTTP control plane
+
+- `GET /api/health` reports service readiness without exposing configuration.
+- `POST /api/plan` accepts `{ "request": "..." }` and returns an audited-plan shape.
+- `/api/plan` requires `Authorization: Bearer <FACTORY_API_TOKEN>` and fails closed
+  when the token is not configured.
+
 ## Current boundary
 
 Mission Control V1 does not touch GitHub, production databases, or deployment providers yet. Those arrive behind scoped tools in following phases.
