@@ -11,7 +11,7 @@ First production-oriented foundation for Abu's AI-operated software company.
 - Hard block on raw-secret access
 - Audited task state machine
 - Persistent local task store
-- Optional OpenAI Agents SDK planner module
+- OpenAI Agents SDK planner using OpenRouter's free router for development
 - Codex engineering-worker adapter
 - Workspace-only Codex writes with network disabled
 - Vercel Sandbox provider with restricted egress
@@ -29,7 +29,11 @@ npm run typecheck
 npm run dev -- "Build attendance export"
 ```
 
-AI planning requires `OPENAI_API_KEY` configured locally. Never commit a real key.
+AI planning currently uses OpenRouter's free router for development. Configure
+`OPENROUTER_API_KEY` as a secret and leave `MISSION_CONTROL_MODEL=openrouter/free`.
+Never commit a real key.
+
+The free router is for development/testing, not our production reliability target.
 
 ## Current boundary
 
