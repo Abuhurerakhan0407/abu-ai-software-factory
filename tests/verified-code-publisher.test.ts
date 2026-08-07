@@ -44,6 +44,12 @@ const work = {
   requiresHuman: false,
 } satisfies CodeWorkResult;
 
+const passingQa = vi.fn(async () => ({
+  verdict: "pass" as const,
+  summary: "Independent QA/security review passed",
+  findings: [],
+}));
+
 async function setup() {
   const projects = new MemoryProjectStore();
   await projects.upsert({
@@ -103,6 +109,7 @@ describe("VerifiedCodePublisher", () => {
       publisher,
       verifier,
       vi.fn(),
+      passingQa,
     ).publish(task, action, work);
 
     expect(publication.pullRequest.draft).toBe(true);
@@ -152,6 +159,7 @@ describe("VerifiedCodePublisher", () => {
       publisher,
       verifier,
       repair,
+      passingQa,
     ).publish(task, action, work);
 
     expect(verifier.verify).toHaveBeenCalledTimes(2);
@@ -186,6 +194,7 @@ describe("VerifiedCodePublisher", () => {
         changes: [],
         requiresHuman: true,
       }),
+      passingQa,
     ).publish(task, action, work)).rejects.toMatchObject({
       code: "sandbox_failed",
     });
