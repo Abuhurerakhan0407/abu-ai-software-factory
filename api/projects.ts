@@ -58,7 +58,10 @@ export async function POST(request: Request): Promise<Response> {
     name: input.name,
     repository: input.repository,
     status: "active",
-    config: input.database ? { database: input.database } : {},
+    config: {
+      ...(input.database ? { database: input.database } : {}),
+      ...(input.deployment ? { deployment: input.deployment } : {}),
+    },
     createdAt: now,
     updatedAt: now,
   };
