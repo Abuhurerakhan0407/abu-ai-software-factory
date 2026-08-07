@@ -1,0 +1,166 @@
+import { describe, expect, it } from "vitest";
+import { FactoryAutopilot } from "../src/autopilot/factory-autopilot.js";
+import type { PlannedAction } from "../src/contracts/task.js";
+import {
+  MissionExecutor,
+  type WorkerFn,
+} from "../src/mission-control/executor.js";
+import { MissionControl } from "../src/mission-control/mission-control.js";
+import { MemoryAgentRunStore } from "../src/store/agent-run-store.js";
+import { MemoryTaskStore } from "../src/store/task-store.js";
+
+const headSha = "abcdef1234567890abcdef1234567890abcdef12";
+
+describe("FactoryAutopilot", () => {
+  it("runs a low-risk request from intake through completion", async () => {
+    const tasks = new MemoryTaskStore();
+    const runs = new MemoryAgentRunStore();
+    const worker: WorkerFn = async () => ({
+      summary: "Dashboard behavior analyzed",
+      evidence: ["Repository evidence reviewed"],
+      recommendations: ["Keep current behavior"],
+      requiresHuman: false,
+    });
+    const executor = new MissionExecutor(tasks, runs, worker, "test-model");
+    const autopilot = new FactoryAutopilot(
+      tasks,
+      async () => ({
+        summary: "Analyze safely",
+        category: "docs",
+        actions: [{
+          kind: "analyze",
+          summary: "Analyze dashboard behavior",
+          target: "dashboard",
+          reversible: true,
+        }],
+      }),
+      (taskId) => executor.execute(taskId),
+      async () => {
+        throw new Error("monitor must not run");
+      },
+    );
+
+    const result = await autopilot.run({
+      request: "Analyze dashboard behavior and recommend safe improvements",
+    });
+
+    expect(result.task.status).toBe("completed");
+    expect(result.steps).toBe(2);
+    expect(result.nextAction).toBe("done");
+    expect(runs.runs.size).toBe(1);
+    expect(result.task.audit.some((event) => event.event === "plan_added")).toBe(true);
+  });
+
+  it("stops production work at human approval", async () => {
+    const tasks = new MemoryTaskStore();
+    let executeCalls = 0;
+    const autopilot = new FactoryAutopilot(
+      tasks,
+      async () => ({
+        summary: "Deploy reviewed pull request",
+        category: "deployment",
+        actions: [{
+          kind: "deploy_production",
+          summary: "Deploy reviewed pull request",
+          target: "pull_request:42",
+          reversible: true,
+        }],
+      }),
+      async () => {
+        executeCalls += 1;
+        throw new Error("executor must not run before approval");
+      },
+      async () => {
+        throw new Error("monitor must not run before deployment");
+      },
+    );
+
+    const result = await autopilot.run({
+      request: "Deploy pull request 42 to production",
+    });
+
+    expect(result.task.status).toBe("awaiting_approval");
+    expect(result.nextAction).toBe("human_approval");
+    expect(executeCalls).toBe(0);
+  });
+
+  it("keeps blocked secret access human-gated", async () => {
+    const tasks = new MemoryTaskStore();
+    const autopilot = new FactoryAutopilot(
+      tasks,
+      async () => ({
+        summary: "Unsafe credential request",
+        category: "security",
+        actions: [{
+          kind: "access_raw_secret",
+          summary: "Read a raw production secret",
+          target: "production",
+          reversible: false,
+        }],
+      }),
+      async () => {
+        throw new Error("executor must not run");
+      },
+      async () => {
+        throw new Error("monitor must not run");
+      },
+    );
+
+    const result = await autopilot.run({
+      request: "Read a raw production credential",
+    });
+
+    expect(result.task.status).toBe("human_required");
+    expect(result.nextAction).toBe("human_review");
+  });
+
+  it("takes only one production health sample per invocation", async () => {
+    const tasks = new MemoryTaskStore();
+    const control = new MissionControl(tasks);
+    const received = await control.intake({
+      title: "Deploy verified release",
+      description: "Deploy verified release",
+      requestedBy: "Abu",
+      category: "deployment",
+    });
+    const action: PlannedAction = {
+      id: "deploy",
+      kind: "deploy_production",
+      summary: "Deploy reviewed pull request",
+      target: "pull_request:42",
+      reversible: true,
+    };
+    await control.addPlan(received.id, [action]);
+    await control.approveProduction(
+      received.id,
+      { pullRequest: 42, headSha },
+      "Abu",
+    );
+    await control.transition(received.id, "verifying", "qa_security", "Verified");
+    await control.transition(received.id, "staging", "qa_security", "Staged");
+    await control.transition(received.id, "deploying", "sre", "Deploying");
+
+    let monitorCalls = 0;
+    const autopilot = new FactoryAutopilot(
+      tasks,
+      async () => {
+        throw new Error("planner must not run");
+      },
+      async () => {
+        throw new Error("executor must not run");
+      },
+      async (taskId) => {
+        monitorCalls += 1;
+        const task = await tasks.get(taskId);
+        if (!task) throw new Error("task missing");
+        return { task };
+      },
+    );
+
+    const result = await autopilot.run({ taskId: received.id });
+
+    expect(monitorCalls).toBe(1);
+    expect(result.steps).toBe(1);
+    expect(result.nextAction).toBe("call_again");
+  });
+});
