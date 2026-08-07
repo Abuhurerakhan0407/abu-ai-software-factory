@@ -28,6 +28,33 @@ describe("GitHubGateway", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
+  it("lists repository trees through a scoped GitHub token", async () => {
+    const responses = [
+      jsonResponse({ token: "short-lived-token" }),
+      jsonResponse({
+        tree: [
+          { path: "README.md", type: "blob", sha: "readme", size: 10 },
+          { path: "src", type: "tree", sha: "src" },
+        ],
+        truncated: false,
+      }),
+    ];
+    const fetcher = vi.fn(async () => responses.shift()!) as unknown as typeof fetch;
+    const gateway = new GitHubGateway(
+      "abu/school-saas",
+      "github/software-factory",
+      "oidc-test-token",
+      fetcher,
+    );
+
+    const tree = await gateway.listTree("main");
+
+    expect(tree.truncated).toBe(false);
+    expect(tree.entries).toHaveLength(2);
+    expect(String((fetcher as unknown as ReturnType<typeof vi.fn>).mock.calls[1]?.[0]))
+      .toContain("/git/trees/main?recursive=1");
+  });
+
   it("creates task-scoped factory branches", async () => {
     const responses = [
       jsonResponse({ token: "short-lived-token" }),
