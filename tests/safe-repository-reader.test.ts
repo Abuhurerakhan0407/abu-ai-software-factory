@@ -45,6 +45,9 @@ describe("SafeRepositoryReader", () => {
   it.each([
     ".env",
     ".env.production",
+    ".env/notes.txt",
+    ".ssh/config",
+    ".aws/credentials",
     "config/private.key",
     "certs/service.pem",
     "../README.md",
