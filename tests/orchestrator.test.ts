@@ -21,7 +21,7 @@ async function triagedTask() {
 describe("MissionOrchestrator", () => {
   it("turns an AI plan into an auditable ready mission", async () => {
     const { store, task } = await triagedTask();
-    const planner: MissionPlanner = vi.fn(async () => ({
+    const planner = vi.fn<MissionPlanner>(async () => ({
       summary: "Implement and verify the dashboard",
       category: "feature",
       actions: [
@@ -103,7 +103,7 @@ describe("MissionOrchestrator", () => {
         reversible: true,
       },
     ]);
-    const planner: MissionPlanner = vi.fn(async () => {
+    const planner = vi.fn<MissionPlanner>(async () => {
       throw new Error("planner must not run");
     });
 
