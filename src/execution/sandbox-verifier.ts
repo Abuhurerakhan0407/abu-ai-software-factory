@@ -155,8 +155,8 @@ async function createProductionSandbox(): Promise<SandboxSession> {
       const result = await sandbox.runCommand(command, args);
       return {
         exitCode: result.exitCode,
-        stdout: result.stdout,
-        stderr: result.stderr,
+        stdout: await result.stdout(),
+        stderr: await result.stderr(),
       };
     },
     lockNetwork: async () => {
