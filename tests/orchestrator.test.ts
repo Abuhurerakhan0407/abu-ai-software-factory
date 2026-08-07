@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import { MissionControl } from "../src/mission-control/mission-control.js";
 import {
   MissionOrchestrator,
-  OrchestrationError,
   type MissionPlanner,
 } from "../src/mission-control/orchestrator.js";
 import { MemoryTaskStore } from "../src/store/task-store.js";
@@ -109,7 +108,7 @@ describe("MissionOrchestrator", () => {
     });
 
     const orchestrator = new MissionOrchestrator(store, planner);
-    await expect(orchestrator.prepare(task.id)).rejects.toMatchObject<Partial<OrchestrationError>>({
+    await expect(orchestrator.prepare(task.id)).rejects.toMatchObject({
       code: "task_not_ready",
     });
     expect(planner).not.toHaveBeenCalled();
