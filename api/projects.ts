@@ -58,7 +58,7 @@ export async function POST(request: Request): Promise<Response> {
     name: input.name,
     repository: input.repository,
     status: "active",
-    config: {},
+    config: input.database ? { database: input.database } : {},
     createdAt: now,
     updatedAt: now,
   };
