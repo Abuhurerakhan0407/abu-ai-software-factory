@@ -5,6 +5,7 @@ import {
   type GitHubFile,
   type GitHubGateway,
 } from "./github-gateway.js";
+import { isSensitiveRepositoryPath } from "./repository-path-policy.js";
 
 const MAX_REPOSITORY_FILE_BYTES = 256 * 1024;
 
@@ -14,20 +15,7 @@ const RepositoryPathSchema = z.string()
   .refine((path) => !path.startsWith("/") && !path.split("/").includes(".."), {
     message: "Repository path must be relative and cannot traverse directories",
   })
-  .refine((path) => {
-    const name = path.split("/").at(-1)?.toLowerCase() ?? "";
-    return !(
-      name === ".env"
-      || name.startsWith(".env.")
-      || name === ".npmrc"
-      || name === ".pypirc"
-      || name === "credentials.json"
-      || name.endsWith(".pem")
-      || name.endsWith(".key")
-      || name.endsWith(".p12")
-      || name.endsWith(".pfx")
-    );
-  }, {
+  .refine((path) => !isSensitiveRepositoryPath(path), {
     message: "Sensitive repository paths cannot be read by agents",
   });
 
