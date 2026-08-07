@@ -28,14 +28,24 @@ function iso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
+function decodeJson(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
 function auditDetail(details: unknown): string {
+  const decoded = decodeJson(details);
   if (
-    typeof details === "object"
-    && details !== null
-    && "detail" in details
-    && typeof (details as { detail?: unknown }).detail === "string"
+    typeof decoded === "object"
+    && decoded !== null
+    && "detail" in decoded
+    && typeof (decoded as { detail?: unknown }).detail === "string"
   ) {
-    return (details as { detail: string }).detail;
+    return (decoded as { detail: string }).detail;
   }
   return "No detail recorded";
 }
@@ -100,7 +110,7 @@ export class PostgresTaskStore implements TaskStore {
           ${parsed.assignedAgent},
           ${parsed.risk},
           ${parsed.status},
-          ${JSON.stringify(parsed.plan)}::jsonb,
+          ${parsed.plan}::jsonb,
           ${parsed.createdAt}::timestamptz,
           ${parsed.updatedAt}::timestamptz
         )
@@ -133,7 +143,7 @@ export class PostgresTaskStore implements TaskStore {
             ${parsed.id}::uuid,
             ${event.actor},
             ${event.event},
-            ${JSON.stringify({ detail: event.detail })}::jsonb,
+            ${{ detail: event.detail }}::jsonb,
             ${event.at}::timestamptz
           )
         `;
@@ -163,7 +173,7 @@ export class PostgresTaskStore implements TaskStore {
       assignedAgent: row.assigned_agent,
       risk: row.risk_level,
       status: row.status,
-      plan: row.plan ?? [],
+      plan: decodeJson(row.plan ?? []),
       createdAt: iso(row.created_at),
       updatedAt: iso(row.updated_at),
       audit: auditRows.map((event) => ({
