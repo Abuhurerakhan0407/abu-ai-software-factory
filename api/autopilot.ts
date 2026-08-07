@@ -56,6 +56,17 @@ export async function POST(request: Request): Promise<Response> {
     return json({ error: "invalid_request" }, 400);
   }
 
+  const startedAt = Date.now();
+  const requestId = request.headers.get("x-vercel-id");
+  console.log(
+    JSON.stringify({
+      level: "info",
+      msg: "autopilot_start",
+      route: "/api/autopilot",
+      requestId,
+    }),
+  );
+
   try {
     const tasks = getProductionTaskStore();
     const projects = getProductionProjectStore();
@@ -88,14 +99,60 @@ export async function POST(request: Request): Promise<Response> {
     );
 
     const result = await autopilot.run(payload);
+    console.log(
+      JSON.stringify({
+        level: "info",
+        msg: "autopilot_done",
+        route: "/api/autopilot",
+        requestId,
+        ms: Date.now() - startedAt,
+      }),
+    );
     return json({ ok: true, result });
   } catch (error) {
     if (error instanceof AutopilotError) {
+      console.warn(
+        JSON.stringify({
+          level: "warn",
+          msg: "autopilot_rejected",
+          route: "/api/autopilot",
+          requestId,
+          code: error.code,
+          ms: Date.now() - startedAt,
+        }),
+      );
       return json(
         { error: error.code },
         error.code === "task_not_found" ? 404 : 409,
       );
     }
+
+    const errorName = error instanceof Error ? error.name : "UnknownError";
+    const errorCode =
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      typeof (error as { code?: unknown }).code === "string"
+        ? (error as { code: string }).code
+        : undefined;
+    const errorMessage = (error instanceof Error ? error.message : String(error))
+      .replace(/postgres(?:ql)?:\/\/\S+/gi, "[redacted-database-url]")
+      .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+      .replace(/sk-[A-Za-z0-9_-]+/g, "[redacted-token]")
+      .slice(0, 500);
+
+    console.error(
+      JSON.stringify({
+        level: "error",
+        msg: "autopilot_failed",
+        route: "/api/autopilot",
+        requestId,
+        errorName,
+        errorCode,
+        errorMessage,
+        ms: Date.now() - startedAt,
+      }),
+    );
     return json({ error: "autopilot_failed" }, 502);
   }
 }
