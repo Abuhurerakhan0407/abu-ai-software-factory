@@ -4,6 +4,7 @@ import type { TaskStore } from "./task-store.js";
 
 type TaskRow = {
   id: string;
+  project_id: string | null;
   title: string;
   description: string;
   requested_by: string;
@@ -57,7 +58,7 @@ export class PostgresTaskStore implements TaskStore {
   async get(id: string): Promise<TaskRecord | undefined> {
     const rows = await this.sql`
       select
-        id, title, description, requested_by, category, assigned_agent,
+        id, project_id, title, description, requested_by, category, assigned_agent,
         risk_level, status, plan, created_at, updated_at
       from factory.tasks
       where id = ${id}::uuid
@@ -71,7 +72,7 @@ export class PostgresTaskStore implements TaskStore {
   async list(): Promise<TaskRecord[]> {
     const rows = await this.sql`
       select
-        id, title, description, requested_by, category, assigned_agent,
+        id, project_id, title, description, requested_by, category, assigned_agent,
         risk_level, status, plan, created_at, updated_at
       from factory.tasks
       order by created_at desc
@@ -86,11 +87,12 @@ export class PostgresTaskStore implements TaskStore {
     await this.sql.begin(async (tx) => {
       await tx`
         insert into factory.tasks (
-          id, title, description, requested_by, category, assigned_agent,
+          id, project_id, title, description, requested_by, category, assigned_agent,
           risk_level, status, plan, created_at, updated_at
         )
         values (
           ${parsed.id}::uuid,
+          ${parsed.projectId ?? null}::uuid,
           ${parsed.title},
           ${parsed.description},
           ${parsed.requestedBy},
@@ -103,6 +105,7 @@ export class PostgresTaskStore implements TaskStore {
           ${parsed.updatedAt}::timestamptz
         )
         on conflict (id) do update set
+          project_id = excluded.project_id,
           title = excluded.title,
           description = excluded.description,
           requested_by = excluded.requested_by,
@@ -152,6 +155,7 @@ export class PostgresTaskStore implements TaskStore {
 
     return TaskRecordSchema.parse({
       id: row.id,
+      projectId: row.project_id,
       title: row.title,
       description: row.description,
       requestedBy: row.requested_by,
@@ -180,4 +184,3 @@ export function getProductionTaskStore(): PostgresTaskStore {
   productionStore ??= new PostgresTaskStore(connectionString);
   return productionStore;
 }
-
