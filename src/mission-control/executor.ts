@@ -7,6 +7,11 @@ import {
   type CodeWorkResult,
 } from "../agents/code-worker.js";
 import {
+  runStagingMigrationWorker,
+  type StagingMigrationWork,
+} from "../agents/staging-migration-worker.js";
+import type { StagingMigrationResult } from "../database/staging-database-gate.js";
+import {
   executionModelName,
   runAnalysisWorker,
   type AgentWorkResult,
@@ -37,6 +42,18 @@ export type CodePublisherFn = (
   action: PlannedAction,
   work: CodeWorkResult,
 ) => Promise<CodePublication>;
+
+export type StagingMigrationWorkerFn = (
+  task: TaskRecord,
+  action: PlannedAction,
+  repositoryContext: readonly RepositoryContextFile[],
+) => Promise<StagingMigrationWork>;
+
+export type StagingDatabaseFn = (
+  task: TaskRecord,
+  action: PlannedAction,
+  work: StagingMigrationWork,
+) => Promise<StagingMigrationResult>;
 
 export class ExecutionError extends Error {
   constructor(
@@ -71,6 +88,8 @@ export class MissionExecutor {
     private readonly repositoryContext: RepositoryContextLoader = emptyRepositoryContext,
     private readonly codeWorker: CodeWorkerFn = runCodeWorker,
     private readonly codePublisher?: CodePublisherFn,
+    private readonly stagingMigrationWorker: StagingMigrationWorkerFn = runStagingMigrationWorker,
+    private readonly stagingDatabase?: StagingDatabaseFn,
   ) {
     this.control = new MissionControl(taskStore);
   }
@@ -95,9 +114,14 @@ export class MissionExecutor {
     );
 
     const results: ExecutionResult[] = [];
+    let usedStagingDatabase = false;
 
     for (const action of task.plan) {
-      if (action.kind !== "analyze" && action.kind !== "modify_code") {
+      if (
+        action.kind !== "analyze"
+        && action.kind !== "modify_code"
+        && action.kind !== "migrate_staging_db"
+      ) {
         task = await this.control.transition(
           task.id,
           "human_required",
@@ -113,6 +137,16 @@ export class MissionExecutor {
           "human_required",
           "execution_engine",
           "Safe code publisher is unavailable",
+        );
+        return { task, results };
+      }
+
+      if (action.kind === "migrate_staging_db" && (!task.projectId || !this.stagingDatabase)) {
+        task = await this.control.transition(
+          task.id,
+          "human_required",
+          "execution_engine",
+          "Staging database gate is unavailable",
         );
         return { task, results };
       }
@@ -147,6 +181,43 @@ export class MissionExecutor {
             );
             return { task, results };
           }
+          continue;
+        }
+
+        if (action.kind === "migrate_staging_db") {
+          const migration = await this.stagingMigrationWorker(task, action, context);
+          if (migration.requiresHuman) {
+            const result: AgentWorkResult = {
+              summary: migration.summary,
+              evidence: ["No database writes were performed"],
+              recommendations: ["Human review is required for this migration"],
+              requiresHuman: true,
+            };
+            await this.runStore.finish(runRecord.id, "succeeded", result);
+            results.push({ actionId: action.id, result });
+            task = await this.control.transition(
+              task.id,
+              "human_required",
+              "qa_security",
+              "Staging migration worker requested human review",
+            );
+            return { task, results };
+          }
+
+          const applied = await this.stagingDatabase!(task, action, migration);
+          const result: AgentWorkResult = {
+            summary: migration.summary,
+            evidence: [
+              "Staging migration fingerprint: " + applied.fingerprint,
+              "Additive statements applied: " + applied.statements,
+              "Production database untouched",
+            ],
+            recommendations: ["Verify application behavior against staging database"],
+            requiresHuman: false,
+          };
+          await this.runStore.finish(runRecord.id, "succeeded", result);
+          results.push({ actionId: action.id, result });
+          usedStagingDatabase = true;
           continue;
         }
 
@@ -223,11 +294,22 @@ export class MissionExecutor {
       "execution_engine",
       "All supported actions executed",
     );
+    if (usedStagingDatabase) {
+      task = await this.control.transition(
+        task.id,
+        "staging",
+        "qa_security",
+        "Staging database migration passed guarded execution",
+      );
+    }
+
     task = await this.control.transition(
       task.id,
       "completed",
       "execution_engine",
-      "Analysis-only mission verified",
+      usedStagingDatabase
+        ? "Staging migration verified; production database untouched"
+        : "Analysis-only mission verified",
     );
 
     return { task, results };

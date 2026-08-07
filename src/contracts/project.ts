@@ -10,9 +10,18 @@ export const RepositoryNameSchema = z.string()
 
 export const ProjectStatusSchema = z.enum(["active", "paused", "archived"]);
 
+export const DatabaseEnvironmentInputSchema = z.object({
+  stagingDatabaseEnv: z.string().regex(/^[A-Z][A-Z0-9_]{2,80}$/),
+  productionDatabaseEnv: z.string().regex(/^[A-Z][A-Z0-9_]{2,80}$/),
+}).refine(
+  (config) => config.stagingDatabaseEnv !== config.productionDatabaseEnv,
+  "Staging and production database env keys must differ",
+);
+
 export const ProjectInputSchema = z.object({
   name: z.string().min(3).max(160),
   repository: RepositoryNameSchema,
+  database: DatabaseEnvironmentInputSchema.optional(),
 });
 
 export const ProjectRecordSchema = z.object({

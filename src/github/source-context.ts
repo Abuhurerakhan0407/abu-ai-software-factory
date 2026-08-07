@@ -155,7 +155,14 @@ export class SourceAwareRepositoryContext {
     task: TaskRecord,
     action: PlannedAction,
   ): Promise<readonly RepositoryContextFile[]> {
-    if (!task.projectId || (action.kind !== "analyze" && action.kind !== "modify_code")) return [];
+    if (
+      !task.projectId
+      || (
+        action.kind !== "analyze"
+        && action.kind !== "modify_code"
+        && action.kind !== "migrate_staging_db"
+      )
+    ) return [];
 
     const tree = await this.navigator.list({
       projectId: task.projectId,
