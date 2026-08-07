@@ -19,8 +19,18 @@ const DeploymentBindingSchema = z.object({
 
 export type ProductionObservation =
   | {
-      status: "pending" | "failed" | "protected";
+      status: "pending";
       deploymentId?: string;
+      reason: string;
+    }
+  | {
+      status: "failed";
+      deploymentId?: string;
+      reason: string;
+    }
+  | {
+      status: "protected";
+      deploymentId: string;
       reason: string;
     }
   | {
