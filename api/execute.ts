@@ -1,6 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import {
+  VerifiedCodePublisher,
+} from "../src/execution/verified-code-publisher.js";
+import {
   SafeCodePublisher,
 } from "../src/github/safe-code-publisher.js";
 import {
@@ -71,7 +74,9 @@ export async function POST(request: Request): Promise<Response> {
       repositoryReader,
       new SafeRepositoryNavigator(projects),
     );
-    const codePublisher = new SafeCodePublisher(projects);
+    const codePublisher = new VerifiedCodePublisher(
+      new SafeCodePublisher(projects),
+    );
     const executor = new MissionExecutor(
       getProductionTaskStore(),
       getProductionAgentRunStore(),
