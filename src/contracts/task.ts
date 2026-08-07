@@ -57,6 +57,7 @@ export const TaskInputSchema = z.object({
   description: z.string().min(3).max(10_000),
   requestedBy: z.string().min(1).max(120).default("Abu"),
   category: TaskCategorySchema.optional(),
+  projectId: z.string().uuid().optional(),
 });
 
 export const PlannedActionSchema = z.object({
@@ -79,6 +80,7 @@ export const TaskRecordSchema = z.object({
   title: z.string(),
   description: z.string(),
   requestedBy: z.string(),
+  projectId: z.string().uuid().nullable().optional(),
   category: TaskCategorySchema,
   assignedAgent: AgentRoleSchema,
   risk: RiskLevelSchema,
