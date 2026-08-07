@@ -30,6 +30,9 @@ describe("SafeRepositoryNavigator", () => {
       entries: [
         { path: "README.md", type: "blob" as const, sha: "readme", size: 10 },
         { path: ".env.production", type: "blob" as const, sha: "env", size: 10 },
+        { path: ".env/notes.txt", type: "blob" as const, sha: "nested-env", size: 10 },
+        { path: ".ssh/config", type: "blob" as const, sha: "ssh", size: 10 },
+        { path: ".aws/credentials", type: "blob" as const, sha: "aws", size: 10 },
         { path: "certs/app.key", type: "blob" as const, sha: "key", size: 10 },
         { path: "src/index.ts", type: "blob" as const, sha: "src", size: 20 },
       ],
