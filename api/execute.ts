@@ -4,6 +4,9 @@ import {
   StagingDatabaseGate,
 } from "../src/database/staging-database-gate.js";
 import {
+  ProductionDeploymentGate,
+} from "../src/deployment/production-deployment-gate.js";
+import {
   VerifiedCodePublisher,
 } from "../src/execution/verified-code-publisher.js";
 import {
@@ -81,6 +84,7 @@ export async function POST(request: Request): Promise<Response> {
       new SafeCodePublisher(projects),
     );
     const stagingDatabase = new StagingDatabaseGate(projects);
+    const productionDeployment = new ProductionDeploymentGate(projects);
     const executor = new MissionExecutor(
       getProductionTaskStore(),
       getProductionAgentRunStore(),
@@ -91,6 +95,7 @@ export async function POST(request: Request): Promise<Response> {
       (task, action, work) => codePublisher.publish(task, action, work),
       undefined,
       (task, action, work) => stagingDatabase.apply(task, action, work),
+      (task, action) => productionDeployment.deploy(task, action),
     );
     const mission = await executor.execute(payload.taskId);
     return json({ ok: true, mission });
