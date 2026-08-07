@@ -174,6 +174,13 @@ export class MissionExecutor {
           summary: codeWork.summary,
           evidence: [
             "Draft PR #" + publication.pullRequest.number + ": " + publication.pullRequest.url,
+            ...(publication.verification
+              ? [
+                  "Sandbox: " + publication.verification.summary,
+                  ...publication.verification.checks,
+                  "Repair attempts: " + publication.verification.repairAttempts,
+                ]
+              : []),
             ...publication.files.map((path) => "Changed: " + path),
           ],
           recommendations: ["Review and verify the draft pull request before merge"],
@@ -185,7 +192,9 @@ export class MissionExecutor {
           task.id,
           "human_required",
           "execution_engine",
-          "Draft pull request created; human merge required",
+          publication.verification
+            ? "Sandbox-verified draft pull request created; human merge required"
+            : "Draft pull request created; human merge required",
         );
         return { task, results };
       } catch {
