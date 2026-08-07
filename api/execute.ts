@@ -1,6 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import {
+  StagingDatabaseGate,
+} from "../src/database/staging-database-gate.js";
+import {
   VerifiedCodePublisher,
 } from "../src/execution/verified-code-publisher.js";
 import {
@@ -77,6 +80,7 @@ export async function POST(request: Request): Promise<Response> {
     const codePublisher = new VerifiedCodePublisher(
       new SafeCodePublisher(projects),
     );
+    const stagingDatabase = new StagingDatabaseGate(projects);
     const executor = new MissionExecutor(
       getProductionTaskStore(),
       getProductionAgentRunStore(),
@@ -85,6 +89,8 @@ export async function POST(request: Request): Promise<Response> {
       (task, action) => repositoryContext.load(task, action),
       undefined,
       (task, action, work) => codePublisher.publish(task, action, work),
+      undefined,
+      (task, action, work) => stagingDatabase.apply(task, action, work),
     );
     const mission = await executor.execute(payload.taskId);
     return json({ ok: true, mission });
