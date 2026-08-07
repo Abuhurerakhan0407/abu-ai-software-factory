@@ -22,6 +22,7 @@ export const VercelDeploymentInputSchema = z.object({
   provider: z.literal("vercel").default("vercel"),
   productionBranch: z.string().regex(/^[A-Za-z0-9._/-]{1,120}$/).default("main"),
   vercelProjectId: z.string().regex(/^prj_[A-Za-z0-9]+$/),
+  healthPath: z.string().regex(/^\/[^\s]*$/).default("/api/health"),
 });
 
 export const ProjectInputSchema = z.object({
