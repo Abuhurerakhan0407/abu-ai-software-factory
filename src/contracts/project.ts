@@ -18,10 +18,17 @@ export const DatabaseEnvironmentInputSchema = z.object({
   "Staging and production database env keys must differ",
 );
 
+export const VercelDeploymentInputSchema = z.object({
+  provider: z.literal("vercel").default("vercel"),
+  productionBranch: z.string().regex(/^[A-Za-z0-9._/-]{1,120}$/).default("main"),
+  vercelProjectId: z.string().regex(/^prj_[A-Za-z0-9]+$/),
+});
+
 export const ProjectInputSchema = z.object({
   name: z.string().min(3).max(160),
   repository: RepositoryNameSchema,
   database: DatabaseEnvironmentInputSchema.optional(),
+  deployment: VercelDeploymentInputSchema.optional(),
 });
 
 export const ProjectRecordSchema = z.object({

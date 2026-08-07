@@ -11,6 +11,7 @@ import {
   type StagingMigrationWork,
 } from "../agents/staging-migration-worker.js";
 import type { StagingMigrationResult } from "../database/staging-database-gate.js";
+import type { ProductionDeploymentResult } from "../deployment/production-deployment-gate.js";
 import {
   executionModelName,
   runAnalysisWorker,
@@ -55,6 +56,11 @@ export type StagingDatabaseFn = (
   work: StagingMigrationWork,
 ) => Promise<StagingMigrationResult>;
 
+export type ProductionDeploymentFn = (
+  task: TaskRecord,
+  action: PlannedAction,
+) => Promise<ProductionDeploymentResult>;
+
 export class ExecutionError extends Error {
   constructor(
     readonly code: "task_not_found" | "task_not_executable",
@@ -90,6 +96,7 @@ export class MissionExecutor {
     private readonly codePublisher?: CodePublisherFn,
     private readonly stagingMigrationWorker: StagingMigrationWorkerFn = runStagingMigrationWorker,
     private readonly stagingDatabase?: StagingDatabaseFn,
+    private readonly productionDeployment?: ProductionDeploymentFn,
   ) {
     this.control = new MissionControl(taskStore);
   }
@@ -99,19 +106,24 @@ export class MissionExecutor {
     if (!task) {
       throw new ExecutionError("task_not_found", "Task not found: " + taskId);
     }
-    if (task.status !== "planned") {
+    const resumingApprovedProduction = task.status === "executing"
+      && task.plan.length === 1
+      && task.plan[0]?.kind === "deploy_production";
+    if (task.status !== "planned" && !resumingApprovedProduction) {
       throw new ExecutionError(
         "task_not_executable",
-        "Task must be planned before execution: " + task.status,
+        "Task must be planned or explicitly approved for production: " + task.status,
       );
     }
 
-    task = await this.control.transition(
-      task.id,
-      "executing",
-      "mission_control",
-      "Autonomous execution started",
-    );
+    if (task.status === "planned") {
+      task = await this.control.transition(
+        task.id,
+        "executing",
+        "mission_control",
+        "Autonomous execution started",
+      );
+    }
 
     const results: ExecutionResult[] = [];
     let usedStagingDatabase = false;
@@ -121,6 +133,7 @@ export class MissionExecutor {
         action.kind !== "analyze"
         && action.kind !== "modify_code"
         && action.kind !== "migrate_staging_db"
+        && action.kind !== "deploy_production"
       ) {
         task = await this.control.transition(
           task.id,
@@ -151,6 +164,16 @@ export class MissionExecutor {
         return { task, results };
       }
 
+      if (action.kind === "deploy_production" && (!task.projectId || !this.productionDeployment)) {
+        task = await this.control.transition(
+          task.id,
+          "human_required",
+          "execution_engine",
+          "Production deployment gate is unavailable",
+        );
+        return { task, results };
+      }
+
       const runRecord = await this.runStore.start({
         taskId: task.id,
         agentRole: task.assignedAgent,
@@ -166,6 +189,43 @@ export class MissionExecutor {
         const context = task.projectId
           ? await this.repositoryContext(task, action)
           : [];
+
+        if (action.kind === "deploy_production") {
+          const deployed = await this.productionDeployment!(task, action);
+          const result: AgentWorkResult = {
+            summary: "Verified production deployment triggered",
+            evidence: [
+              "Verified PR #" + deployed.pullRequest + " merged",
+              "Approved source head: " + deployed.sourceHeadSha,
+              "Production commit: " + deployed.productionCommitSha,
+              "Vercel rollout awaiting monitoring",
+            ],
+            recommendations: ["Monitor production health before completion"],
+            requiresHuman: false,
+          };
+          await this.runStore.finish(runRecord.id, "succeeded", result);
+          results.push({ actionId: action.id, result });
+
+          task = await this.control.transition(
+            task.id,
+            "verifying",
+            "qa_security",
+            "SHA-bound production promotion accepted",
+          );
+          task = await this.control.transition(
+            task.id,
+            "staging",
+            "qa_security",
+            "Verified artifact promoted from reviewed factory PR",
+          );
+          task = await this.control.transition(
+            task.id,
+            "deploying",
+            "sre",
+            "Vercel production rollout triggered; monitoring required",
+          );
+          return { task, results };
+        }
 
         if (action.kind === "analyze") {
           const result = await this.worker(task, action, context);
