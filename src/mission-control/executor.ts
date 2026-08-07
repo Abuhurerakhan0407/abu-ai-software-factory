@@ -179,6 +179,12 @@ export class MissionExecutor {
                   "Sandbox: " + publication.verification.summary,
                   ...publication.verification.checks,
                   "Repair attempts: " + publication.verification.repairAttempts,
+                  ...(publication.verification.qaSecurity
+                    ? [
+                        "QA/security: " + publication.verification.qaSecurity.summary,
+                        ...publication.verification.qaSecurity.findings,
+                      ]
+                    : []),
                 ]
               : []),
             ...publication.files.map((path) => "Changed: " + path),

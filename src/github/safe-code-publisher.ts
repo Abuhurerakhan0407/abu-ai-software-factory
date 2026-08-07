@@ -99,6 +99,10 @@ export type CodeVerificationInfo = {
   summary: string;
   checks: string[];
   repairAttempts: number;
+  qaSecurity?: {
+    summary: string;
+    findings: string[];
+  };
 };
 
 export type CodePublication = CodeStaging & {
@@ -259,6 +263,12 @@ export class SafeCodePublisher {
           "Sandbox verification: " + verification.summary,
           ...verification.checks.map((check) => "- " + check),
           "Automatic repair attempts: " + verification.repairAttempts,
+          ...(verification.qaSecurity
+            ? [
+                "QA/security review: " + verification.qaSecurity.summary,
+                ...verification.qaSecurity.findings.map((finding) => "- " + finding),
+              ]
+            : []),
         ]
       : [];
 
