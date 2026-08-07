@@ -134,4 +134,26 @@ describe("production monitoring", () => {
     expect(third.task.status).toBe("human_required");
     expect(third.rollback).toBe("unsupported");
   });
+
+  it("never rolls back a deployment that failed before readiness", async () => {
+    const { tasks, projects, taskId } = await setup();
+    let rollbackCalls = 0;
+    const gateway: ProductionMonitoringGateway = {
+      observe: async () => ({
+        status: "failed",
+        deploymentId: "dpl_failed",
+        reason: "Vercel deployment state: ERROR",
+      }),
+      rollback: async () => {
+        rollbackCalls += 1;
+        return "completed";
+      },
+    };
+    const monitor = new ProductionMonitor(tasks, projects, gateway);
+    const result = await monitor.monitor(taskId);
+
+    expect(result.task.status).toBe("failed");
+    expect(result.rollback).toBe("none");
+    expect(rollbackCalls).toBe(0);
+  });
 });
