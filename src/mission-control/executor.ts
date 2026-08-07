@@ -206,6 +206,12 @@ export class MissionExecutor {
           await this.runStore.finish(runRecord.id, "succeeded", result);
           results.push({ actionId: action.id, result });
 
+          task = await this.control.recordProductionDeployment(task.id, {
+            vercelProjectId: deployed.vercelProjectId,
+            pullRequest: deployed.pullRequest,
+            sourceHeadSha: deployed.sourceHeadSha,
+            productionCommitSha: deployed.productionCommitSha,
+          });
           task = await this.control.transition(
             task.id,
             "verifying",
