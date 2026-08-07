@@ -59,7 +59,7 @@ describe("SourceAwareRepositoryContext", () => {
         path: input.path,
         ref: input.ref,
         sha: `sha-${input.path}`,
-        content: "x".repeat(20_000),
+        content: "x".repeat(10_000),
       })),
     };
 
