@@ -1,11 +1,14 @@
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import {
-  SafeRepositoryContext,
-} from "../src/github/repository-context.js";
+  SafeRepositoryNavigator,
+} from "../src/github/safe-repository-navigator.js";
 import {
   SafeRepositoryReader,
 } from "../src/github/safe-repository-reader.js";
+import {
+  SourceAwareRepositoryContext,
+} from "../src/github/source-context.js";
 import {
   ExecutionError,
   MissionExecutor,
@@ -59,8 +62,11 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   try {
-    const repositoryContext = new SafeRepositoryContext(
-      new SafeRepositoryReader(getProductionProjectStore()),
+    const projects = getProductionProjectStore();
+    const repositoryReader = new SafeRepositoryReader(projects);
+    const repositoryContext = new SourceAwareRepositoryContext(
+      repositoryReader,
+      new SafeRepositoryNavigator(projects),
     );
     const executor = new MissionExecutor(
       getProductionTaskStore(),
