@@ -25,6 +25,7 @@ export class MissionControl {
       title: input.title,
       description: input.description,
       requestedBy: input.requestedBy,
+      projectId: input.projectId ?? null,
       category,
       assignedAgent: routeTask(category),
       risk: initialRiskForCategory(category),
