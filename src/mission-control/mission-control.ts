@@ -119,6 +119,75 @@ export class MissionControl {
     );
   }
 
+  async recordProductionDeployment(
+    id: string,
+    binding: {
+      vercelProjectId: string;
+      pullRequest: number;
+      sourceHeadSha: string;
+      productionCommitSha: string;
+    },
+  ): Promise<TaskRecord> {
+    const task = await this.requireTask(id);
+    if (
+      task.status !== "executing"
+      || !/^prj_[A-Za-z0-9]+$/.test(binding.vercelProjectId)
+      || !Number.isInteger(binding.pullRequest)
+      || binding.pullRequest < 1
+      || !/^[a-f0-9]{40}$/i.test(binding.sourceHeadSha)
+      || !/^[a-f0-9]{40}$/i.test(binding.productionCommitSha)
+    ) {
+      throw new Error("Invalid production deployment binding");
+    }
+    const now = new Date().toISOString();
+    const updated: TaskRecord = {
+      ...task,
+      updatedAt: now,
+      audit: [...task.audit, {
+        at: now,
+        actor: "sre",
+        event: "production_deployment_triggered",
+        detail: JSON.stringify(binding),
+      }],
+    };
+    await this.store.upsert(updated);
+    return updated;
+  }
+
+  async recordProductionObservation(
+    id: string,
+    observation: {
+      productionCommitSha: string;
+      deploymentId: string;
+      healthy: boolean;
+      reason: string;
+    },
+  ): Promise<TaskRecord> {
+    const task = await this.requireTask(id);
+    if (
+      task.status !== "monitoring"
+      || !/^[a-f0-9]{40}$/i.test(observation.productionCommitSha)
+      || !/^[A-Za-z0-9_-]{3,160}$/.test(observation.deploymentId)
+      || observation.reason.length < 1
+      || observation.reason.length > 300
+    ) {
+      throw new Error("Invalid production health observation");
+    }
+    const now = new Date().toISOString();
+    const updated: TaskRecord = {
+      ...task,
+      updatedAt: now,
+      audit: [...task.audit, {
+        at: now,
+        actor: "sre",
+        event: "production_health_observed",
+        detail: JSON.stringify(observation),
+      }],
+    };
+    await this.store.upsert(updated);
+    return updated;
+  }
+
   async transition(id: string, next: TaskStatus, actor: string, reason: string): Promise<TaskRecord> {
     const task = await this.requireTask(id);
     assertTransition(task.status, next);
