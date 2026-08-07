@@ -39,6 +39,30 @@ const PullResponseSchema = z.object({
   draft: z.boolean(),
 });
 
+const ProductionPullResponseSchema = z.object({
+  number: z.number().int().positive(),
+  html_url: z.string().url(),
+  state: z.literal("open"),
+  draft: z.boolean(),
+  merged: z.boolean().default(false),
+  body: z.string().nullable(),
+  head: z.object({
+    ref: z.string().min(1),
+    sha: z.string().min(7),
+    repo: z.object({ full_name: z.string().min(3) }),
+  }),
+  base: z.object({
+    ref: z.string().min(1),
+    repo: z.object({ full_name: z.string().min(3) }),
+  }),
+});
+
+const MergeResponseSchema = z.object({
+  sha: z.string().min(7),
+  merged: z.boolean(),
+  message: z.string(),
+});
+
 type Fetcher = typeof fetch;
 
 export type GitHubFile = {
@@ -62,6 +86,13 @@ export type DraftPullRequest = {
   number: number;
   url: string;
   draft: true;
+};
+
+export type ProductionPromotion = {
+  pullRequest: number;
+  url: string;
+  sourceHeadSha: string;
+  productionCommitSha: string;
 };
 
 export class GitHubGateway {
@@ -167,6 +198,59 @@ export class GitHubGateway {
 
     if (!pull.draft) throw new Error("GitHub returned a non-draft pull request");
     return { number: pull.number, url: pull.html_url, draft: true };
+  }
+
+  async promoteVerifiedFactoryPullRequest(input: {
+    pullRequest: number;
+    productionBranch: string;
+  }): Promise<ProductionPromotion> {
+    if (!Number.isInteger(input.pullRequest) || input.pullRequest < 1) {
+      throw new Error("Pull request number is invalid");
+    }
+    if (!/^[A-Za-z0-9._/-]{1,120}$/.test(input.productionBranch)) {
+      throw new Error("Production branch is invalid");
+    }
+
+    const pull = ProductionPullResponseSchema.parse(
+      await this.github(`/pulls/${input.pullRequest}`),
+    );
+    const body = pull.body ?? "";
+    const verifiedBody = body.includes("Sandbox verification:")
+      && body.includes("QA/security review:")
+      && body.includes("Safety: draft PR only; protected paths rejected; production unchanged.");
+
+    if (
+      pull.draft
+      || pull.merged
+      || pull.base.ref !== input.productionBranch
+      || pull.base.repo.full_name !== this.repository
+      || pull.head.repo.full_name !== this.repository
+      || !pull.head.ref.startsWith("factory/")
+      || !verifiedBody
+    ) {
+      throw new Error("Pull request is outside verified production policy");
+    }
+
+    const merge = MergeResponseSchema.parse(await this.github(
+      `/pulls/${input.pullRequest}/merge`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          sha: pull.head.sha,
+          merge_method: "squash",
+        }),
+      },
+    ));
+    if (!merge.merged) {
+      throw new Error("GitHub rejected production merge: " + merge.message);
+    }
+
+    return {
+      pullRequest: pull.number,
+      url: pull.html_url,
+      sourceHeadSha: pull.head.sha,
+      productionCommitSha: merge.sha,
+    };
   }
 
   private assertFactoryBranch(branch: string): void {
