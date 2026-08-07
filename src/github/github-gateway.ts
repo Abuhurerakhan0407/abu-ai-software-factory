@@ -23,6 +23,16 @@ const ContentResponseSchema = z.object({
   encoding: z.literal("base64"),
 });
 
+const TreeResponseSchema = z.object({
+  tree: z.array(z.object({
+    path: z.string().min(1),
+    type: z.enum(["blob", "tree", "commit"]),
+    sha: z.string().min(1),
+    size: z.number().int().nonnegative().optional(),
+  })),
+  truncated: z.boolean(),
+});
+
 const PullResponseSchema = z.object({
   number: z.number().int().positive(),
   html_url: z.string().url(),
@@ -34,6 +44,18 @@ type Fetcher = typeof fetch;
 export type GitHubFile = {
   sha: string;
   content: string;
+};
+
+export type GitHubTreeEntry = {
+  path: string;
+  type: "blob" | "tree" | "commit";
+  sha: string;
+  size?: number;
+};
+
+export type GitHubTree = {
+  entries: GitHubTreeEntry[];
+  truncated: boolean;
 };
 
 export type DraftPullRequest = {
@@ -61,6 +83,21 @@ export class GitHubGateway {
     return {
       sha: response.sha,
       content: Buffer.from(response.content.replace(/\n/g, ""), "base64").toString("utf8"),
+    };
+  }
+
+  async listTree(ref: string): Promise<GitHubTree> {
+    const response = TreeResponseSchema.parse(await this.github(
+      `/git/trees/${encodeURIComponent(ref)}?recursive=1`,
+    ));
+    return {
+      entries: response.tree.map((entry) => ({
+        path: entry.path,
+        type: entry.type,
+        sha: entry.sha,
+        ...(entry.size === undefined ? {} : { size: entry.size }),
+      })),
+      truncated: response.truncated,
     };
   }
 
