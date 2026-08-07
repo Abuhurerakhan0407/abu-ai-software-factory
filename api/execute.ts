@@ -1,6 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import {
+  SafeCodePublisher,
+} from "../src/github/safe-code-publisher.js";
+import {
   SafeRepositoryNavigator,
 } from "../src/github/safe-repository-navigator.js";
 import {
@@ -68,12 +71,15 @@ export async function POST(request: Request): Promise<Response> {
       repositoryReader,
       new SafeRepositoryNavigator(projects),
     );
+    const codePublisher = new SafeCodePublisher(projects);
     const executor = new MissionExecutor(
       getProductionTaskStore(),
       getProductionAgentRunStore(),
       undefined,
       undefined,
       (task, action) => repositoryContext.load(task, action),
+      undefined,
+      (task, action, work) => codePublisher.publish(task, action, work),
     );
     const mission = await executor.execute(payload.taskId);
     return json({ ok: true, mission });

@@ -4,6 +4,8 @@ import type { RepositoryContextFile } from "../src/github/repository-context.js"
 import {
   ExecutionError,
   MissionExecutor,
+  type CodePublisherFn,
+  type CodeWorkerFn,
   type WorkerFn,
 } from "../src/mission-control/executor.js";
 import { MissionControl } from "../src/mission-control/mission-control.js";
@@ -152,6 +154,59 @@ describe("MissionExecutor", () => {
     expect(mission.task.status).toBe("human_required");
     expect(workerCalled).toBe(false);
     expect(runStore.runs.size).toBe(0);
+  });
+
+  it("publishes modify_code work only through a draft-PR publisher", async () => {
+    const { taskStore, planned } = await createPlannedTask({
+      id: "code",
+      kind: "modify_code",
+      summary: "Modify dashboard code",
+      target: "dashboard",
+      reversible: true,
+    }, PROJECT_ID);
+    const runStore = new MemoryAgentRunStore();
+    const contextLoader = async (): Promise<readonly RepositoryContextFile[]> => [{
+      repository: "abu/school-saas",
+      path: "src/dashboard.ts",
+      ref: "main",
+      sha: "source-sha-123",
+      content: "export const dashboard = false;\n",
+    }];
+    const codeWorker: CodeWorkerFn = async () => ({
+      summary: "Dashboard implementation updated",
+      changes: [{
+        operation: "update",
+        path: "src/dashboard.ts",
+        sourceSha: "source-sha-123",
+        content: "export const dashboard = true;\n",
+      }],
+      requiresHuman: false,
+    });
+    const codePublisher: CodePublisherFn = async () => ({
+      projectId: PROJECT_ID,
+      repository: "abu/school-saas",
+      branch: "factory/" + planned.id,
+      pullRequest: {
+        number: 27,
+        url: "https://github.com/abu/school-saas/pull/27",
+        draft: true,
+      },
+      files: ["src/dashboard.ts"],
+    });
+
+    const mission = await new MissionExecutor(
+      taskStore,
+      runStore,
+      undefined,
+      "test-model",
+      contextLoader,
+      codeWorker,
+      codePublisher,
+    ).execute(planned.id);
+
+    expect(mission.task.status).toBe("human_required");
+    expect(mission.results[0]?.result.evidence[0]).toContain("Draft PR #27");
+    expect([...runStore.runs.values()][0]?.status).toBe("succeeded");
   });
 
   it("refuses tasks still waiting for approval", async () => {
