@@ -88,10 +88,13 @@ export type DraftPullRequest = {
   draft: true;
 };
 
-export type ProductionPromotion = {
+export type ProductionPromotionCandidate = {
   pullRequest: number;
   url: string;
   sourceHeadSha: string;
+};
+
+export type ProductionPromotion = ProductionPromotionCandidate & {
   productionCommitSha: string;
 };
 
@@ -200,10 +203,10 @@ export class GitHubGateway {
     return { number: pull.number, url: pull.html_url, draft: true };
   }
 
-  async promoteVerifiedFactoryPullRequest(input: {
+  async inspectVerifiedFactoryPullRequest(input: {
     pullRequest: number;
     productionBranch: string;
-  }): Promise<ProductionPromotion> {
+  }): Promise<ProductionPromotionCandidate> {
     if (!Number.isInteger(input.pullRequest) || input.pullRequest < 1) {
       throw new Error("Pull request number is invalid");
     }
@@ -231,12 +234,29 @@ export class GitHubGateway {
       throw new Error("Pull request is outside verified production policy");
     }
 
+    return {
+      pullRequest: pull.number,
+      url: pull.html_url,
+      sourceHeadSha: pull.head.sha,
+    };
+  }
+
+  async promoteVerifiedFactoryPullRequest(input: {
+    pullRequest: number;
+    productionBranch: string;
+    expectedHeadSha: string;
+  }): Promise<ProductionPromotion> {
+    const candidate = await this.inspectVerifiedFactoryPullRequest(input);
+    if (candidate.sourceHeadSha !== input.expectedHeadSha) {
+      throw new Error("Pull request changed after human approval");
+    }
+
     const merge = MergeResponseSchema.parse(await this.github(
       `/pulls/${input.pullRequest}/merge`,
       {
         method: "PUT",
         body: JSON.stringify({
-          sha: pull.head.sha,
+          sha: input.expectedHeadSha,
           merge_method: "squash",
         }),
       },
@@ -246,9 +266,7 @@ export class GitHubGateway {
     }
 
     return {
-      pullRequest: pull.number,
-      url: pull.html_url,
-      sourceHeadSha: pull.head.sha,
+      ...candidate,
       productionCommitSha: merge.sha,
     };
   }
