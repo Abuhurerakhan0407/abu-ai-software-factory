@@ -1,10 +1,17 @@
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import {
+  SafeRepositoryContext,
+} from "../src/github/repository-context.js";
+import {
+  SafeRepositoryReader,
+} from "../src/github/safe-repository-reader.js";
+import {
   ExecutionError,
   MissionExecutor,
 } from "../src/mission-control/executor.js";
 import { getProductionAgentRunStore } from "../src/store/postgres-agent-run-store.js";
+import { getProductionProjectStore } from "../src/store/postgres-project-store.js";
 import { getProductionTaskStore } from "../src/store/postgres-task-store.js";
 
 const ExecuteRequestSchema = z.object({
@@ -52,9 +59,15 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   try {
+    const repositoryContext = new SafeRepositoryContext(
+      new SafeRepositoryReader(getProductionProjectStore()),
+    );
     const executor = new MissionExecutor(
       getProductionTaskStore(),
       getProductionAgentRunStore(),
+      undefined,
+      undefined,
+      (task, action) => repositoryContext.load(task, action),
     );
     const mission = await executor.execute(payload.taskId);
     return json({ ok: true, mission });

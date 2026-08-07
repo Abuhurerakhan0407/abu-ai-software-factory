@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PlannedAction } from "../src/contracts/task.js";
+import type { RepositoryContextFile } from "../src/github/repository-context.js";
 import {
   ExecutionError,
   MissionExecutor,
@@ -9,7 +10,12 @@ import { MissionControl } from "../src/mission-control/mission-control.js";
 import { MemoryAgentRunStore } from "../src/store/agent-run-store.js";
 import { MemoryTaskStore } from "../src/store/task-store.js";
 
-async function createPlannedTask(action: PlannedAction) {
+const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
+
+async function createPlannedTask(
+  action: PlannedAction,
+  projectId?: string,
+) {
   const taskStore = new MemoryTaskStore();
   const control = new MissionControl(taskStore);
   const task = await control.intake({
@@ -17,6 +23,7 @@ async function createPlannedTask(action: PlannedAction) {
     description: "Review dashboard behavior and recommend next steps",
     requestedBy: "Abu",
     category: "docs",
+    projectId,
   });
   const planned = await control.addPlan(task.id, [action]);
   return { taskStore, planned };
@@ -49,6 +56,75 @@ describe("MissionExecutor", () => {
     expect(mission.task.status).toBe("completed");
     expect(mission.results).toHaveLength(1);
     expect([...runStore.runs.values()][0]?.status).toBe("succeeded");
+  });
+
+  it("passes bounded repository evidence to project analysis workers", async () => {
+    const { taskStore, planned } = await createPlannedTask({
+      id: "analysis",
+      kind: "analyze",
+      summary: "Analyze project implementation",
+      target: "repository",
+      reversible: true,
+    }, PROJECT_ID);
+    const runStore = new MemoryAgentRunStore();
+    let received: readonly RepositoryContextFile[] | undefined;
+    const worker: WorkerFn = async (_task, _action, repositoryContext) => {
+      received = repositoryContext;
+      return {
+        summary: "Repository context analyzed",
+        evidence: ["README.md@abc123"],
+        recommendations: ["Continue with scoped analysis"],
+        requiresHuman: false,
+      };
+    };
+    const contextLoader = async (): Promise<readonly RepositoryContextFile[]> => [{
+      repository: "Abuhurerakhan0407/abu-ai-software-factory",
+      path: "README.md",
+      ref: "main",
+      sha: "abc123",
+      content: "safe project overview",
+    }];
+
+    const mission = await new MissionExecutor(
+      taskStore,
+      runStore,
+      worker,
+      "test-model",
+      contextLoader,
+    ).execute(planned.id);
+
+    expect(mission.task.status).toBe("completed");
+    expect(received).toEqual(await contextLoader());
+  });
+
+  it("fails closed when repository context cannot be loaded", async () => {
+    const { taskStore, planned } = await createPlannedTask({
+      id: "analysis",
+      kind: "analyze",
+      summary: "Analyze project implementation",
+      target: "repository",
+      reversible: true,
+    }, PROJECT_ID);
+    const runStore = new MemoryAgentRunStore();
+    let workerCalled = false;
+    const worker: WorkerFn = async () => {
+      workerCalled = true;
+      throw new Error("worker must not run");
+    };
+
+    const mission = await new MissionExecutor(
+      taskStore,
+      runStore,
+      worker,
+      "test-model",
+      async () => {
+        throw new Error("repository unavailable");
+      },
+    ).execute(planned.id);
+
+    expect(mission.task.status).toBe("failed");
+    expect(workerCalled).toBe(false);
+    expect([...runStore.runs.values()][0]?.status).toBe("failed");
   });
 
   it("fails closed when a mutating tool adapter is unavailable", async () => {

@@ -3,6 +3,10 @@ import type {
   TaskRecord,
 } from "../contracts/task.js";
 import type {
+  RepositoryContextFile,
+  RepositoryContextLoader,
+} from "../github/repository-context.js";
+import type {
   AgentRunStore,
 } from "../store/agent-run-store.js";
 import type { TaskStore } from "../store/task-store.js";
@@ -16,6 +20,7 @@ import { MissionControl } from "./mission-control.js";
 export type WorkerFn = (
   task: TaskRecord,
   action: PlannedAction,
+  repositoryContext?: readonly RepositoryContextFile[],
 ) => Promise<AgentWorkResult>;
 
 export class ExecutionError extends Error {
@@ -38,6 +43,8 @@ export type ExecutionMission = {
   results: ExecutionResult[];
 };
 
+const emptyRepositoryContext: RepositoryContextLoader = async () => [];
+
 export class MissionExecutor {
   private readonly control: MissionControl;
 
@@ -46,6 +53,7 @@ export class MissionExecutor {
     private readonly runStore: AgentRunStore,
     private readonly worker: WorkerFn = runAnalysisWorker,
     private readonly modelName: string = executionModelName(),
+    private readonly repositoryContext: RepositoryContextLoader = emptyRepositoryContext,
   ) {
     this.control = new MissionControl(taskStore);
   }
@@ -94,7 +102,10 @@ export class MissionExecutor {
       });
 
       try {
-        const result = await this.worker(task, action);
+        const context = task.projectId
+          ? await this.repositoryContext(task, action)
+          : [];
+        const result = await this.worker(task, action, context);
         await this.runStore.finish(runRecord.id, "succeeded", result);
         results.push({ actionId: action.id, result });
 
