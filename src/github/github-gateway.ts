@@ -76,6 +76,8 @@ export class GitHubGateway {
     if (!oidcToken) throw new Error("VERCEL_OIDC_TOKEN is required");
   }
 
+  private connectTokenPromise?: Promise<string>;
+
   async getFile(path: string, ref: string): Promise<GitHubFile> {
     const response = ContentResponseSchema.parse(await this.github(
       `/contents/${encodeURIComponent(path).replace(/%2F/g, "/")}?ref=${encodeURIComponent(ref)}`,
@@ -198,7 +200,12 @@ export class GitHubGateway {
     return response.status === 204 ? {} : response.json();
   }
 
-  private async connectToken(): Promise<string> {
+  private connectToken(): Promise<string> {
+    this.connectTokenPromise ??= this.requestConnectToken();
+    return this.connectTokenPromise;
+  }
+
+  private async requestConnectToken(): Promise<string> {
     const response = await this.fetcher(
       `https://api.vercel.com/v1/connect/token/${this.connectorId}`,
       {
