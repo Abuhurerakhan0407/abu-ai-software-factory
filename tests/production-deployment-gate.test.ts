@@ -24,8 +24,11 @@ function task(approved: boolean): TaskRecord {
     audit: approved ? [{
       at: "2026-08-07T00:00:00.000Z",
       actor: "Abu",
-      event: "status_changed",
-      detail: "awaiting_approval -> executing: Human approval granted",
+      event: "production_approval_granted",
+      detail: JSON.stringify({
+        pullRequest: 42,
+        headSha: "abcdef1234567890abcdef1234567890abcdef12",
+      }),
     }] : [],
   };
 }
@@ -65,13 +68,20 @@ describe("production deployment gate", () => {
 
     let called = false;
     const gate = new ProductionDeploymentGate(projects, () => ({
+      inspectVerifiedFactoryPullRequest: async () => ({
+        pullRequest: 42,
+        url: "https://github.com/abu/school-saas/pull/42",
+        sourceHeadSha: "abcdef1234567890abcdef1234567890abcdef12",
+      }),
       promoteVerifiedFactoryPullRequest: async (input) => {
-        called = input.pullRequest === 42 && input.productionBranch === "main";
+        called = input.pullRequest === 42
+          && input.productionBranch === "main"
+          && input.expectedHeadSha === "abcdef1234567890abcdef1234567890abcdef12";
         return {
           pullRequest: 42,
           url: "https://github.com/abu/school-saas/pull/42",
-          sourceHeadSha: "abcdef1234567890",
-          productionCommitSha: "fedcba0987654321",
+          sourceHeadSha: "abcdef1234567890abcdef1234567890abcdef12",
+          productionCommitSha: "fedcba0987654321fedcba0987654321fedcba09",
         };
       },
     }));
@@ -79,6 +89,8 @@ describe("production deployment gate", () => {
     const result = await gate.deploy(task(true), action);
     expect(called).toBe(true);
     expect(result.triggered).toBe(true);
-    expect(result.productionCommitSha).toBe("fedcba0987654321");
+    expect(result.productionCommitSha).toBe(
+      "fedcba0987654321fedcba0987654321fedcba09",
+    );
   });
 });
