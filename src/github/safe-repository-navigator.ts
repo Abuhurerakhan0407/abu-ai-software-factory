@@ -5,6 +5,7 @@ import {
   type GitHubGateway,
   type GitHubTreeEntry,
 } from "./github-gateway.js";
+import { isSensitiveRepositoryPath } from "./repository-path-policy.js";
 
 const MAX_TREE_ENTRIES = 2_000;
 
@@ -35,21 +36,6 @@ export class RepositoryTreeError extends Error {
     super(message);
     this.name = "RepositoryTreeError";
   }
-}
-
-function isSensitivePath(path: string): boolean {
-  return path.split("/").some((segment) => {
-    const name = segment.toLowerCase();
-    return name === ".env"
-      || name.startsWith(".env.")
-      || name === ".npmrc"
-      || name === ".pypirc"
-      || name === "credentials.json"
-      || name.endsWith(".pem")
-      || name.endsWith(".key")
-      || name.endsWith(".p12")
-      || name.endsWith(".pfx");
-  });
 }
 
 type GatewayTreeReader = Pick<GitHubGateway, "listTree">;
@@ -85,7 +71,7 @@ export class SafeRepositoryNavigator {
       );
     }
 
-    const entries = tree.entries.filter((entry) => !isSensitivePath(entry.path));
+    const entries = tree.entries.filter((entry) => !isSensitiveRepositoryPath(entry.path));
     if (entries.length > MAX_TREE_ENTRIES) {
       throw new RepositoryTreeError(
         "tree_too_large",
