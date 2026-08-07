@@ -59,9 +59,7 @@ describe("GitHubGateway", () => {
     const responses = [
       jsonResponse({ token: "short-lived-token" }),
       jsonResponse({ default_branch: "main" }),
-      jsonResponse({ token: "short-lived-token" }),
       jsonResponse({ object: { sha: "abc123" } }),
-      jsonResponse({ token: "short-lived-token" }),
       jsonResponse({ ref: "refs/heads/factory/task" }, 201),
     ];
     const fetcher = vi.fn(async () => responses.shift()!) as unknown as typeof fetch;
@@ -76,7 +74,7 @@ describe("GitHubGateway", () => {
     const branch = await gateway.createFactoryBranch(taskId);
 
     expect(branch).toBe(`factory/${taskId}`);
-    const createRefCall = (fetcher as unknown as ReturnType<typeof vi.fn>).mock.calls[5];
+    const createRefCall = (fetcher as unknown as ReturnType<typeof vi.fn>).mock.calls[3];
     expect(String(createRefCall?.[0])).toContain("/git/refs");
     expect(JSON.parse(String(createRefCall?.[1]?.body))).toEqual({
       ref: `refs/heads/factory/${taskId}`,
@@ -88,7 +86,6 @@ describe("GitHubGateway", () => {
     const responses = [
       jsonResponse({ token: "short-lived-token" }),
       jsonResponse({ default_branch: "main" }),
-      jsonResponse({ token: "short-lived-token" }),
       jsonResponse({
         number: 42,
         html_url: "https://github.com/abu/school-saas/pull/42",
@@ -110,7 +107,7 @@ describe("GitHubGateway", () => {
     });
 
     expect(pull.draft).toBe(true);
-    const pullCall = (fetcher as unknown as ReturnType<typeof vi.fn>).mock.calls[3];
+    const pullCall = (fetcher as unknown as ReturnType<typeof vi.fn>).mock.calls[2];
     expect(JSON.parse(String(pullCall?.[1]?.body)).draft).toBe(true);
   });
 });
