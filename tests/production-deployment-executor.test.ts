@@ -28,7 +28,10 @@ describe("approved production deployment execution", () => {
     } satisfies PlannedAction;
     const awaiting = await control.addPlan(task.id, [action]);
     expect(awaiting.status).toBe("awaiting_approval");
-    const approved = await control.approve(task.id, "Abu");
+    const approved = await control.approveProduction(task.id, {
+      pullRequest: 42,
+      headSha: "abcdef1234567890abcdef1234567890abcdef12",
+    }, "Abu");
     expect(approved.status).toBe("executing");
 
     const deploy: ProductionDeploymentFn = async () => ({
@@ -36,8 +39,8 @@ describe("approved production deployment execution", () => {
       provider: "vercel",
       vercelProjectId: "prj_school123",
       pullRequest: 42,
-      sourceHeadSha: "abcdef1234567890",
-      productionCommitSha: "fedcba0987654321",
+      sourceHeadSha: "abcdef1234567890abcdef1234567890abcdef12",
+      productionCommitSha: "fedcba0987654321fedcba0987654321fedcba09",
     });
 
     const mission = await new MissionExecutor(
