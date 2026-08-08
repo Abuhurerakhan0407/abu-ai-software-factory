@@ -47,8 +47,62 @@ describe("FactoryAutopilot", () => {
     expect(result.task.status).toBe("completed");
     expect(result.steps).toBe(2);
     expect(result.nextAction).toBe("done");
+    expect(result.evidence).toEqual([{
+      actionId: "1-analyze",
+      summary: "Dashboard behavior analyzed",
+      evidence: ["Repository evidence reviewed"],
+      recommendations: ["Keep current behavior"],
+      requiresHuman: false,
+      recordedAt: result.task.updatedAt,
+    }]);
     expect(runs.runs.size).toBe(1);
     expect(result.task.audit.some((event) => event.event === "plan_added")).toBe(true);
+  });
+
+  it("redacts secrets from execution evidence", async () => {
+    const tasks = new MemoryTaskStore();
+    const runs = new MemoryAgentRunStore();
+    const worker: WorkerFn = async () => ({
+      summary: "Bearer private-session-token",
+      evidence: [
+        "postgresql://user:password@example.com/factory",
+        "FACTORY_API_TOKEN=super-secret-value",
+        "gho_1234567890abcdef",
+      ],
+      recommendations: ["Keep DATABASE_URL=postgresql://user:password@example.com/factory private"],
+      requiresHuman: false,
+    });
+    const executor = new MissionExecutor(tasks, runs, worker, "test-model");
+    const autopilot = new FactoryAutopilot(
+      tasks,
+      async () => ({
+        summary: "Analyze safely",
+        category: "security",
+        actions: [{
+          kind: "analyze",
+          summary: "Analyze repository evidence",
+          target: "repository",
+          reversible: true,
+        }],
+      }),
+      (taskId) => executor.execute(taskId),
+      async () => {
+        throw new Error("monitor must not run");
+      },
+    );
+
+    const result = await autopilot.run({
+      request: "Analyze repository evidence safely",
+    });
+
+    const serialized = JSON.stringify(result.evidence);
+    expect(result.task.status).toBe("completed");
+    expect(result.evidence[0]?.summary).toBe("Bearer [redacted]");
+    expect(serialized).not.toContain("private-session-token");
+    expect(serialized).not.toContain("password");
+    expect(serialized).not.toContain("super-secret-value");
+    expect(serialized).not.toContain("1234567890abcdef");
+    expect(serialized).toContain("[redacted");
   });
 
   it("records planner failure without crashing the API workflow", async () => {

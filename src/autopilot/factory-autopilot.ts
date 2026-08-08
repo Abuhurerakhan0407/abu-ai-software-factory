@@ -13,14 +13,36 @@ export type AutopilotNextAction =
   | "human_approval"
   | "human_review";
 
+export type AutopilotExecutionEvidence = {
+  actionId: string;
+  summary: string;
+  evidence: string[];
+  recommendations: string[];
+  requiresHuman: boolean;
+  recordedAt: string;
+};
+
 export type AutopilotResult = {
   task: TaskRecord;
   steps: number;
   nextAction: AutopilotNextAction;
+  evidence: AutopilotExecutionEvidence[];
+};
+
+type AutopilotWorkerResult = {
+  actionId: string;
+  result: {
+    summary: string;
+    evidence: readonly string[];
+    recommendations: readonly string[];
+    requiresHuman: boolean;
+  };
 };
 
 export type AutopilotPlanner = (request: string) => Promise<MissionPlan>;
-export type AutopilotExecutor = (taskId: string) => Promise<{ task: TaskRecord }>;
+export type AutopilotExecutor = (
+  taskId: string,
+) => Promise<{ task: TaskRecord; results?: readonly AutopilotWorkerResult[] }>;
 export type AutopilotMonitor = (taskId: string) => Promise<{ task: TaskRecord }>;
 
 export class AutopilotError extends Error {
@@ -34,6 +56,44 @@ export class AutopilotError extends Error {
 }
 
 const MAX_STEPS_PER_CALL = 3;
+const MAX_EVIDENCE_ACTIONS = 10;
+const MAX_EVIDENCE_ITEMS = 10;
+const MAX_RECOMMENDATIONS = 5;
+const MAX_EVIDENCE_TEXT = 500;
+
+function sanitizeEvidenceText(value: string): string {
+  return value
+    .replace(/postgres(?:ql)?:\/\/\S+/gi, "[redacted-database-url]")
+    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+    .replace(/\b(?:sk|gh[opsu]|vcp|vcs)_[A-Za-z0-9_-]{8,}\b/g, "[redacted-token]")
+    .replace(
+      /\b(?:OPENROUTER_API_KEY|FACTORY_API_TOKEN|DATABASE_URL|VERCEL_OIDC_TOKEN)\s*[:=]\s*\S+/gi,
+      (match) => match.split(/[:=]/, 1)[0] + "=[redacted]",
+    )
+    .replace(
+      /\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b/g,
+      "[redacted-jwt]",
+    )
+    .slice(0, MAX_EVIDENCE_TEXT);
+}
+
+function collectExecutionEvidence(
+  results: readonly AutopilotWorkerResult[],
+  recordedAt: string,
+): AutopilotExecutionEvidence[] {
+  return results.slice(0, MAX_EVIDENCE_ACTIONS).map(({ actionId, result }) => ({
+    actionId,
+    summary: sanitizeEvidenceText(result.summary),
+    evidence: result.evidence
+      .slice(0, MAX_EVIDENCE_ITEMS)
+      .map(sanitizeEvidenceText),
+    recommendations: result.recommendations
+      .slice(0, MAX_RECOMMENDATIONS)
+      .map(sanitizeEvidenceText),
+    requiresHuman: result.requiresHuman,
+    recordedAt,
+  }));
+}
 
 function titleFromRequest(request: string): string {
   const firstLine = request.split("\n")[0]?.trim() || "Software factory task";
@@ -90,6 +150,7 @@ export class FactoryAutopilot {
     }
 
     let steps = 0;
+    const evidence: AutopilotExecutionEvidence[] = [];
     while (steps < MAX_STEPS_PER_CALL) {
       if (task.status === "triaged") {
         let plan: MissionPlan;
@@ -102,7 +163,7 @@ export class FactoryAutopilot {
             "mission_control",
             "AI planning failed; no execution attempted",
           );
-          return { task, steps, nextAction: "human_review" };
+          return { task, steps, nextAction: "human_review", evidence };
         }
         task = await this.control.addPlan(
           task.id,
@@ -116,7 +177,11 @@ export class FactoryAutopilot {
       }
 
       if (task.status === "planned" || isApprovedProductionResume(task)) {
-        task = (await this.executor(task.id)).task;
+        const execution = await this.executor(task.id);
+        task = execution.task;
+        evidence.push(
+          ...collectExecutionEvidence(execution.results ?? [], task.updatedAt),
+        );
         steps += 1;
         continue;
       }
@@ -124,7 +189,7 @@ export class FactoryAutopilot {
       if (task.status === "deploying" || task.status === "monitoring") {
         task = (await this.monitor(task.id)).task;
         steps += 1;
-        return { task, steps, nextAction: nextAction(task.status) };
+        return { task, steps, nextAction: nextAction(task.status), evidence };
       }
 
       if (task.status === "executing") {
@@ -134,9 +199,9 @@ export class FactoryAutopilot {
         );
       }
 
-      return { task, steps, nextAction: nextAction(task.status) };
+      return { task, steps, nextAction: nextAction(task.status), evidence };
     }
 
-    return { task, steps, nextAction: nextAction(task.status) };
+    return { task, steps, nextAction: nextAction(task.status), evidence };
   }
 }
