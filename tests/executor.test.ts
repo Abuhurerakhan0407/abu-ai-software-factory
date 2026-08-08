@@ -209,6 +209,71 @@ describe("MissionExecutor", () => {
     expect([...runStore.runs.values()][0]?.status).toBe("succeeded");
   });
 
+  it("executes standalone run_tests through the isolated test adapter", async () => {
+    const { taskStore, planned } = await createPlannedTask({
+      id: "tests",
+      kind: "run_tests",
+      summary: "Run existing automated tests",
+      target: "repository",
+      reversible: true,
+    });
+    const runStore = new MemoryAgentRunStore();
+    const mission = await new MissionExecutor(
+      taskStore,
+      runStore,
+      undefined,
+      "test-model",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      async () => ({
+        summary: "Isolated sandbox checks passed",
+        evidence: ["test: passed"],
+        recommendations: [],
+        requiresHuman: false,
+      }),
+    ).execute(planned.id);
+
+    expect(mission.task.status).toBe("completed");
+    expect(mission.results[0]?.result.evidence).toContain("test: passed");
+    expect([...runStore.runs.values()][0]?.status).toBe("succeeded");
+  });
+
+  it("fails closed when standalone sandbox tests need review", async () => {
+    const { taskStore, planned } = await createPlannedTask({
+      id: "tests",
+      kind: "run_tests",
+      summary: "Run existing automated tests",
+      target: "repository",
+      reversible: true,
+    });
+    const runStore = new MemoryAgentRunStore();
+    const mission = await new MissionExecutor(
+      taskStore,
+      runStore,
+      undefined,
+      "test-model",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      async () => ({
+        summary: "test failed in the isolated sandbox",
+        evidence: ["test: failed"],
+        recommendations: ["Review the failed isolated sandbox check"],
+        requiresHuman: true,
+      }),
+    ).execute(planned.id);
+
+    expect(mission.task.status).toBe("human_required");
+    expect(mission.results[0]?.result.evidence).toContain("test: failed");
+  });
+
   it("refuses tasks still waiting for approval", async () => {
     const { taskStore, planned } = await createPlannedTask({
       id: "production",
