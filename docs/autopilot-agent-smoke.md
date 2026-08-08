@@ -1,0 +1,1 @@
+Autopilot coding-agent smoke test passed.
