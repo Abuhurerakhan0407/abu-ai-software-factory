@@ -12,6 +12,32 @@ import { MemoryTaskStore } from "../src/store/task-store.js";
 const headSha = "abcdef1234567890abcdef1234567890abcdef12";
 
 describe("FactoryAutopilot", () => {
+  it("submits a mission without running planner or executor work", async () => {
+    const tasks = new MemoryTaskStore();
+    let plannerCalls = 0;
+    const autopilot = new FactoryAutopilot(
+      tasks,
+      async () => {
+        plannerCalls += 1;
+        throw new Error("planner must not run during submission");
+      },
+      async () => {
+        throw new Error("executor must not run during submission");
+      },
+      async () => {
+        throw new Error("monitor must not run during submission");
+      },
+    );
+
+    const task = await autopilot.submit({
+      request: "Run existing automated tests only",
+    });
+
+    expect(task.status).toBe("triaged");
+    expect(plannerCalls).toBe(0);
+    expect(await tasks.get(task.id)).toEqual(task);
+  });
+
   it("runs a low-risk request from intake through completion", async () => {
     const tasks = new MemoryTaskStore();
     const runs = new MemoryAgentRunStore();
