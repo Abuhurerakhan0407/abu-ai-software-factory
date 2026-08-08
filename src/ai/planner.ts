@@ -41,6 +41,14 @@ const NO_OP_ACTION_SUMMARY = [
 const REPOSITORY_FILE_TARGET = /^(?:\.github|api|docs|migrations|src|tests)\//i;
 
 const PLANNER_MAX_ATTEMPTS = 3;
+const PLANNER_ATTEMPT_TIMEOUT_MS = 30_000;
+
+export class PlannerTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Planner model call timed out after ${timeoutMs}ms`);
+    this.name = "PlannerTimeoutError";
+  }
+}
 
 const EXACT_CONTENT_MARKER = /\b(?:containing exactly|(?:entire\s+)?file content must be exactly)\s*:?\s*/i;
 const EXACT_CONTENT_CONTROL_BOUNDARY = /\s+(?=(?:publication requirement\s*:|publish changes?\b|do not (?:modify|change|deploy|commit|push|publish)\b))/i;
@@ -122,6 +130,9 @@ export async function retryPlannerOperation<T>(
     try {
       return await operation();
     } catch (error) {
+      if (error instanceof PlannerTimeoutError) {
+        throw error;
+      }
       lastError = error;
     }
   }
@@ -168,7 +179,17 @@ export async function createMissionPlan(request: string): Promise<MissionPlan> {
   });
 
   return retryPlannerOperation(async () => {
-    const result = await run(planner, request);
+    const signal = AbortSignal.timeout(PLANNER_ATTEMPT_TIMEOUT_MS);
+    const result = await (async () => {
+      try {
+        return await run(planner, request, { signal });
+      } catch (error) {
+        if (signal.aborted) {
+          throw new PlannerTimeoutError(PLANNER_ATTEMPT_TIMEOUT_MS);
+        }
+        throw error;
+      }
+    })();
     const sanitized = sanitizeMissionPlan(MissionPlanSchema.parse(result.finalOutput));
     return applyDeterministicExactContent(request, sanitized);
   });
