@@ -142,11 +142,14 @@ function checkCommands(scripts: Record<string, string>): Array<{
 }
 
 function sandboxCredentials(): Record<string, string> {
-  const token = process.env.VERCEL_AUTOMATION_TOKEN;
-  const teamId = process.env.VERCEL_TEAM_ID;
-  const projectId = process.env.VERCEL_PROJECT_ID;
+  const token = process.env.VERCEL_AUTOMATION_TOKEN ?? process.env.VERCEL_TOKEN;
+  const teamId = process.env.VERCEL_TEAM_ID ?? "team_bd5aRTcsnH9l8I1fVoc8TuAg";
+  const projectId = process.env.VERCEL_PROJECT_ID ?? "prj_zZ8j9yzVRlIBnv67KWqVgCxThJWZ";
 
-  if (!token || !teamId || !projectId) return {};
+  if (!token) {
+    throw new Error("VERCEL_AUTOMATION_TOKEN or VERCEL_TOKEN is required");
+  }
+
   return { token, teamId, projectId };
 }
 
