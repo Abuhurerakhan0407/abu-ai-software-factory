@@ -88,6 +88,20 @@ export type ExecutionMission = {
 
 const emptyRepositoryContext: RepositoryContextLoader = async () => [];
 
+function safeWorkerFailure(error: unknown): {
+  error: "worker_failed";
+  errorName: string;
+  errorMessage: string;
+} {
+  const errorName = error instanceof Error ? error.name : "UnknownError";
+  const errorMessage = (error instanceof Error ? error.message : String(error))
+    .replace(/postgres(?:ql)?:\\/\\/\\S+/gi, "[redacted-database-url]")
+    .replace(/Bearer\\s+\\S+/gi, "Bearer [redacted]")
+    .replace(/\\b(?:sk|gh[opsu]|vcp|vcs)_[A-Za-z0-9_-]{8,}\\b/g, "[redacted-token]")
+    .slice(0, 500);
+  return { error: "worker_failed", errorName, errorMessage };
+}
+
 export class MissionExecutor {
   private readonly control: MissionControl;
 
@@ -374,10 +388,12 @@ export class MissionExecutor {
             : "Draft pull request created; human merge required",
         );
         return { task, results };
-      } catch {
-        await this.runStore.finish(runRecord.id, "failed", {
-          error: "worker_failed",
-        });
+      } catch (error) {
+        await this.runStore.finish(
+          runRecord.id,
+          "failed",
+          safeWorkerFailure(error),
+        );
         task = await this.control.transition(
           task.id,
           "failed",
