@@ -14,16 +14,24 @@ afterEach(() => {
 
 describe("factory API", () => {
   it("reports health without exposing secrets", async () => {
+    process.env.DATABASE_URL = "postgres://health-secret";
+    process.env.FACTORY_API_TOKEN = "factory-health-secret";
+    process.env.OPENROUTER_API_KEY = "openrouter-health-secret";
+    process.env.GITHUB_CONNECTOR_ID = "github-health-secret";
+
     const response = health();
     const body = await response.json();
+    const serialized = JSON.stringify(body);
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(body).toEqual({
+    expect(body).toMatchObject({
       ok: true,
       service: "abu-ai-software-factory",
       status: "ready",
+      checks: { coreRuntime: true },
     });
+    expect(serialized).not.toContain("health-secret");
   });
 
   it("fails closed when the factory API token is missing", async () => {
