@@ -1,3 +1,4 @@
+import { getToken } from "@vercel/connect";
 import { z } from "zod";
 
 const RepositorySchema = z.string().regex(
@@ -102,12 +103,11 @@ export class GitHubGateway {
   constructor(
     private readonly repository: string,
     private readonly connectorId: string,
-    private readonly oidcToken: string,
+    private readonly oidcToken = "",
     private readonly fetcher: Fetcher = fetch,
   ) {
     RepositorySchema.parse(repository);
     if (!connectorId) throw new Error("GITHUB_CONNECTOR_ID is required");
-    if (!oidcToken) throw new Error("VERCEL_OIDC_TOKEN is required");
   }
 
   private connectTokenPromise?: Promise<string>;
@@ -308,6 +308,10 @@ export class GitHubGateway {
   }
 
   private async requestConnectToken(): Promise<string> {
+    if (!this.oidcToken) {
+      return getToken(this.connectorId, { subject: { type: "app" } });
+    }
+
     const response = await this.fetcher(
       `https://api.vercel.com/v1/connect/token/${this.connectorId}`,
       {
@@ -332,6 +336,5 @@ export function getProductionGitHubGateway(repository: string): GitHubGateway {
   return new GitHubGateway(
     repository,
     process.env.GITHUB_CONNECTOR_ID ?? "",
-    process.env.VERCEL_OIDC_TOKEN ?? "",
   );
 }
