@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  applyDeterministicExactContent,
   retryPlannerOperation,
   sanitizeMissionPlan,
   type MissionPlan,
@@ -85,6 +86,83 @@ describe("sanitizeMissionPlan", () => {
         reversible: true,
       },
     ]))).toThrow("Planner returned no executable actions");
+  });
+});
+
+describe("applyDeterministicExactContent", () => {
+  it("keeps publication instructions out of unquoted exact content", () => {
+    const sanitized = applyDeterministicExactContent(
+      "Create docs/autopilot-agent-smoke.md containing exactly: Autopilot coding-agent smoke test passed. Publish changes only through a draft pull request.",
+      plan([{
+        kind: "modify_code",
+        summary: "Create documentation smoke-test file",
+        target: "docs/autopilot-agent-smoke.md",
+        expectedContent: "Autopilot coding-agent smoke test passed. Publish changes only through a draft pull request.",
+        reversible: true,
+      }]),
+    );
+
+    expect(sanitized.actions[0]?.expectedContent).toBe(
+      "Autopilot coding-agent smoke test passed.",
+    );
+  });
+
+  it("keeps safety guardrails out of unquoted exact content", () => {
+    const sanitized = applyDeterministicExactContent(
+      "Create docs/autopilot-agent-smoke.md containing exactly: Autopilot coding-agent smoke test passed. Do not modify application code, database, deployments, configuration, or secrets.",
+      plan([{
+        kind: "modify_code",
+        summary: "Create documentation smoke-test file",
+        target: "docs/autopilot-agent-smoke.md",
+        expectedContent: "wrong model extraction",
+        reversible: true,
+      }]),
+    );
+
+    expect(sanitized.actions[0]?.expectedContent).toBe(
+      "Autopilot coding-agent smoke test passed.",
+    );
+  });
+
+  it("honors quoted exact content verbatim", () => {
+    const sanitized = applyDeterministicExactContent(
+      'Create docs/example.md. Entire file content must be exactly "Publish changes carefully. Do not modify this sentence." Publication requirement: draft pull request only.',
+      plan([{
+        kind: "modify_code",
+        summary: "Create exact documentation file",
+        target: "docs/example.md",
+        expectedContent: "wrong model extraction",
+        reversible: true,
+      }]),
+    );
+
+    expect(sanitized.actions[0]?.expectedContent).toBe(
+      "Publish changes carefully. Do not modify this sentence.",
+    );
+  });
+
+  it("does not guess which file owns exact content when multiple files change", () => {
+    const original = plan([
+      {
+        kind: "modify_code",
+        summary: "Create first file",
+        target: "docs/one.md",
+        expectedContent: null,
+        reversible: true,
+      },
+      {
+        kind: "modify_code",
+        summary: "Create second file",
+        target: "docs/two.md",
+        expectedContent: null,
+        reversible: true,
+      },
+    ]);
+
+    expect(applyDeterministicExactContent(
+      "Create docs/one.md containing exactly: hello",
+      original,
+    )).toEqual(original);
   });
 });
 
