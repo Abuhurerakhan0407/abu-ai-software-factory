@@ -42,6 +42,42 @@ const REPOSITORY_FILE_TARGET = /^(?:\.github|api|docs|migrations|src|tests)\//i;
 
 const PLANNER_MAX_ATTEMPTS = 3;
 
+const EXACT_CONTENT_MARKER = /\b(?:containing exactly|(?:entire\\s+)?file content must be exactly)\\s*:?\\s*/i;
+const EXACT_CONTENT_CONTROL_BOUNDARY = /\\s+(?=(?:publication requirement\\s*:|publish changes?\\b|do not (?:modify|change|deploy|commit|push|publish)\\b))/i;
+
+export function applyDeterministicExactContent(
+  request: string,
+  plan: MissionPlan,
+): MissionPlan {
+  const marker = EXACT_CONTENT_MARKER.exec(request);
+  if (!marker) return plan;
+
+  const codeActions = plan.actions.filter((action) => action.kind === "modify_code");
+  if (codeActions.length !== 1) return plan;
+
+  const remainder = request.slice(marker.index + marker[0].length).trimStart();
+  if (!remainder) return plan;
+
+  let expectedContent: string;
+  const quote = remainder[0];
+  if (quote === "\"" || quote === "'" || quote === "`") {
+    const closingQuote = remainder.indexOf(quote, 1);
+    if (closingQuote < 1) return plan;
+    expectedContent = remainder.slice(1, closingQuote);
+  } else {
+    expectedContent = remainder.split(EXACT_CONTENT_CONTROL_BOUNDARY, 1)[0]?.trim() ?? "";
+  }
+
+  if (!expectedContent || expectedContent.length > 10_000) return plan;
+
+  return {
+    ...plan,
+    actions: plan.actions.map((action) => action === codeActions[0]
+      ? { ...action, expectedContent }
+      : action),
+  };
+}
+
 function isNoOpActionSummary(summary: string): boolean {
   const normalized = summary.trim().replace(/\s+/g, " ");
   return NO_OP_ACTION_SUMMARY.some((pattern) => pattern.test(normalized));
@@ -133,6 +169,7 @@ export async function createMissionPlan(request: string): Promise<MissionPlan> {
 
   return retryPlannerOperation(async () => {
     const result = await run(planner, request);
-    return sanitizeMissionPlan(MissionPlanSchema.parse(result.finalOutput));
+    const sanitized = sanitizeMissionPlan(MissionPlanSchema.parse(result.finalOutput));
+    return applyDeterministicExactContent(request, sanitized);
   });
 }
