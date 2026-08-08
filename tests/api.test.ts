@@ -1,14 +1,21 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { GET as health } from "../api/health.js";
-import { POST as plan } from "../api/plan.js";
+import { plannerErrorDiagnostic, POST as plan } from "../api/plan.js";
 
 const originalFactoryToken = process.env.FACTORY_API_TOKEN;
+const originalOpenRouterKey = process.env.OPENROUTER_API_KEY;
 
 afterEach(() => {
   if (originalFactoryToken === undefined) {
     delete process.env.FACTORY_API_TOKEN;
   } else {
     process.env.FACTORY_API_TOKEN = originalFactoryToken;
+  }
+
+  if (originalOpenRouterKey === undefined) {
+    delete process.env.OPENROUTER_API_KEY;
+  } else {
+    process.env.OPENROUTER_API_KEY = originalOpenRouterKey;
   }
 });
 
@@ -70,5 +77,23 @@ describe("factory API", () => {
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: "invalid_request" });
+  });
+
+  it("redacts secrets from planner failure diagnostics", () => {
+    process.env.FACTORY_API_TOKEN = "factory-secret-for-testing";
+    process.env.OPENROUTER_API_KEY = "sk-or-v1-openrouter-secret";
+    const error = Object.assign(
+      new Error(
+        "upstream rejected Bearer factory-secret-for-testing with sk-or-v1-openrouter-secret",
+      ),
+      { status: 429, code: "rate_limit_exceeded" },
+    );
+
+    expect(plannerErrorDiagnostic(error)).toEqual({
+      name: "Error",
+      message: "upstream rejected Bearer [redacted] with [redacted]",
+      status: 429,
+      code: "rate_limit_exceeded",
+    });
   });
 });
