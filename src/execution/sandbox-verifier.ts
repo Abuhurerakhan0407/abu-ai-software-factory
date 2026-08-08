@@ -141,8 +141,18 @@ function checkCommands(scripts: Record<string, string>): Array<{
   return checks;
 }
 
+function sandboxCredentials(): Record<string, string> {
+  const token = process.env.VERCEL_AUTOMATION_TOKEN;
+  const teamId = process.env.VERCEL_TEAM_ID;
+  const projectId = process.env.VERCEL_PROJECT_ID;
+
+  if (!token || !teamId || !projectId) return {};
+  return { token, teamId, projectId };
+}
+
 async function createProductionSandbox(): Promise<SandboxSession> {
   const sandbox = await Sandbox.create({
+    ...sandboxCredentials(),
     runtime: "node24",
     timeout: 180_000,
     persistent: false,
