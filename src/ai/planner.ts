@@ -28,6 +28,8 @@ const NO_OP_ACTION_SUMMARY = [
   /^(?:none|nothing)\s+(?:required|needed|necessary|to do)\.?$/i,
 ];
 
+const PLANNER_MAX_ATTEMPTS = 3;
+
 function isNoOpActionSummary(summary: string): boolean {
   const normalized = summary.trim().replace(/\s+/g, " ");
   return NO_OP_ACTION_SUMMARY.some((pattern) => pattern.test(normalized));
@@ -39,6 +41,26 @@ export function sanitizeMissionPlan(plan: MissionPlan): MissionPlan {
     throw new Error("Planner returned no executable actions");
   }
   return { ...plan, actions };
+}
+
+export async function retryPlannerOperation<T>(
+  operation: () => Promise<T>,
+  maxAttempts = PLANNER_MAX_ATTEMPTS,
+): Promise<T> {
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1) {
+    throw new Error("Planner retry attempts must be a positive integer");
+  }
+
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError ?? new Error("Planner failed without an error");
 }
 
 async function createPlannerModel() {
@@ -74,6 +96,8 @@ export async function createMissionPlan(request: string): Promise<MissionPlan> {
     outputType: MissionPlanSchema,
   });
 
-  const result = await run(planner, request);
-  return sanitizeMissionPlan(MissionPlanSchema.parse(result.finalOutput));
+  return retryPlannerOperation(async () => {
+    const result = await run(planner, request);
+    return sanitizeMissionPlan(MissionPlanSchema.parse(result.finalOutput));
+  });
 }
