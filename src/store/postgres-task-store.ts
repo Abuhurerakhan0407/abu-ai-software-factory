@@ -110,7 +110,7 @@ export class PostgresTaskStore implements TaskStore {
           ${parsed.assignedAgent},
           ${parsed.risk},
           ${parsed.status},
-          ${parsed.plan}::jsonb,
+          ${JSON.stringify(parsed.plan)}::text::jsonb,
           ${parsed.createdAt}::timestamptz,
           ${parsed.updatedAt}::timestamptz
         )
@@ -143,7 +143,7 @@ export class PostgresTaskStore implements TaskStore {
             ${parsed.id}::uuid,
             ${event.actor},
             ${event.event},
-            ${{ detail: event.detail }}::jsonb,
+            ${JSON.stringify({ detail: event.detail })}::text::jsonb,
             ${event.at}::timestamptz
           )
         `;
