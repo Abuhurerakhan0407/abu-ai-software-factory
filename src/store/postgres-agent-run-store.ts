@@ -68,7 +68,7 @@ export class PostgresAgentRunStore implements AgentRunStore {
         ${input.agentRole},
         ${input.model ?? null},
         'running',
-        ${JSON.stringify(input.payload ?? null)}::jsonb
+        ${JSON.stringify(input.payload ?? null)}::text::jsonb
       )
       returning
         id, task_id, agent_role, model, status, input, output,
@@ -88,7 +88,7 @@ export class PostgresAgentRunStore implements AgentRunStore {
       update factory.agent_runs
       set
         status = ${status},
-        output = ${JSON.stringify(output ?? null)}::jsonb,
+        output = ${JSON.stringify(output ?? null)}::text::jsonb,
         finished_at = now()
       where id = ${id}::uuid
       returning
