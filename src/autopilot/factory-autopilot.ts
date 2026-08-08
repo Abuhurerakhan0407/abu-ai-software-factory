@@ -131,6 +131,15 @@ export class FactoryAutopilot {
     this.control = new MissionControl(tasks);
   }
 
+  async submit(input: { request: string; projectId?: string }): Promise<TaskRecord> {
+    return this.control.intake({
+      title: titleFromRequest(input.request),
+      description: input.request,
+      requestedBy: "Abu",
+      projectId: input.projectId,
+    });
+  }
+
   async run(input: AutopilotInput): Promise<AutopilotResult> {
     let task: TaskRecord;
 
@@ -141,12 +150,7 @@ export class FactoryAutopilot {
       }
       task = existing;
     } else {
-      task = await this.control.intake({
-        title: titleFromRequest(input.request),
-        description: input.request,
-        requestedBy: "Abu",
-        projectId: input.projectId,
-      });
+      task = await this.submit(input);
     }
 
     let steps = 0;

@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { waitUntil } from "@vercel/functions";
 import { z } from "zod";
 import { createMissionPlan } from "../src/ai/planner.js";
 import {
@@ -42,6 +43,37 @@ function authorized(request: Request, expected: string): boolean {
   const supplied = Buffer.from(authorization.slice("Bearer ".length));
   const wanted = Buffer.from(expected);
   return supplied.length === wanted.length && timingSafeEqual(supplied, wanted);
+}
+
+const DONE_STATUSES = new Set([
+  "completed",
+  "failed",
+  "human_required",
+  "awaiting_approval",
+  "rolled_back",
+]);
+
+export async function GET(request: Request): Promise<Response> {
+  const factoryToken = process.env.FACTORY_API_TOKEN;
+  if (!factoryToken) return json({ error: "service_not_configured" }, 503);
+  if (!authorized(request, factoryToken)) return json({ error: "unauthorized" }, 401);
+  if (!process.env.DATABASE_URL) return json({ error: "database_not_configured" }, 503);
+
+  const parsedTaskId = z.string().uuid().safeParse(
+    new URL(request.url).searchParams.get("taskId"),
+  );
+  if (!parsedTaskId.success) return json({ error: "invalid_task_id" }, 400);
+
+  const task = await getProductionTaskStore().get(parsedTaskId.data);
+  if (!task) return json({ error: "task_not_found" }, 404);
+
+  return json({
+    ok: true,
+    result: {
+      task,
+      done: DONE_STATUSES.has(task.status),
+    },
+  });
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -133,6 +165,46 @@ export async function POST(request: Request): Promise<Response> {
       (taskId) => monitor.monitor(taskId),
     );
 
+    if ("request" in payload) {
+      const task = await autopilot.submit(payload);
+      const background = autopilot.run({ taskId: task.id })
+        .then((result) => {
+          console.log(
+            JSON.stringify({
+              level: "info",
+              msg: "autopilot_done",
+              route: "/api/autopilot",
+              requestId,
+              taskId: task.id,
+              status: result.task.status,
+              ms: Date.now() - startedAt,
+            }),
+          );
+        })
+        .catch((error: unknown) => {
+          console.error(
+            JSON.stringify({
+              level: "error",
+              msg: "autopilot_background_failed",
+              route: "/api/autopilot",
+              requestId,
+              taskId: task.id,
+              errorName: error instanceof Error ? error.name : "UnknownError",
+              ms: Date.now() - startedAt,
+            }),
+          );
+        });
+
+      waitUntil(background);
+      return json({
+        ok: true,
+        accepted: true,
+        taskId: task.id,
+        status: task.status,
+        statusUrl: "/api/autopilot?taskId=" + task.id,
+      }, 202);
+    }
+
     const result = await autopilot.run(payload);
     console.log(
       JSON.stringify({
@@ -140,6 +212,8 @@ export async function POST(request: Request): Promise<Response> {
         msg: "autopilot_done",
         route: "/api/autopilot",
         requestId,
+        taskId: result.task.id,
+        status: result.task.status,
         ms: Date.now() - startedAt,
       }),
     );
