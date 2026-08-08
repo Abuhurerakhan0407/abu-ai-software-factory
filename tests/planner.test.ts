@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  retryPlannerOperation,
   sanitizeMissionPlan,
   type MissionPlan,
 } from "../src/ai/planner.js";
@@ -60,5 +61,30 @@ describe("sanitizeMissionPlan", () => {
         reversible: true,
       },
     ]))).toThrow("Planner returned no executable actions");
+  });
+});
+
+describe("retryPlannerOperation", () => {
+  it("returns immediately when the first planner attempt succeeds", async () => {
+    const operation = vi.fn().mockResolvedValue("valid plan");
+
+    await expect(retryPlannerOperation(operation)).resolves.toBe("valid plan");
+    expect(operation).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries transient or invalid planner output and then succeeds", async () => {
+    const operation = vi.fn()
+      .mockRejectedValueOnce(new Error("invalid structured output"))
+      .mockResolvedValueOnce("valid plan");
+
+    await expect(retryPlannerOperation(operation)).resolves.toBe("valid plan");
+    expect(operation).toHaveBeenCalledTimes(2);
+  });
+
+  it("fails closed after the bounded retry budget is exhausted", async () => {
+    const operation = vi.fn().mockRejectedValue(new Error("planner unavailable"));
+
+    await expect(retryPlannerOperation(operation, 3)).rejects.toThrow("planner unavailable");
+    expect(operation).toHaveBeenCalledTimes(3);
   });
 });
