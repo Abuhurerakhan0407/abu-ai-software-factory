@@ -64,6 +64,7 @@ export const PlannedActionSchema = z.object({
   id: z.string().min(1),
   kind: ActionKindSchema,
   summary: z.string().min(3).max(500),
+  expectedContent: z.string().max(10_000).optional(),
   target: z.string().min(1).max(500),
   reversible: z.boolean(),
 });
