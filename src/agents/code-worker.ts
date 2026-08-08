@@ -68,7 +68,7 @@ function isInvalidStructuredOutput(error: unknown): error is Error {
 
 export function parseCodeWorkJson(output: string): CodeWorkResult {
   const trimmed = output.trim();
-  const fenced = trimmed.match(/^\`\`\`(?:json)?\s*([\s\S]*?)\s*\`\`\`$/i);
+  const fenced = trimmed.match(/^\x60\x60\x60(?:json)?\s*([\s\S]*?)\s*\x60\x60\x60$/i);
   const candidate = fenced?.[1] ?? trimmed;
   return CodeWorkResultSchema.parse(JSON.parse(candidate));
 }
