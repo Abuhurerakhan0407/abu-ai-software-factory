@@ -24,7 +24,14 @@ export const MissionPlanSchema = z.object({
     ),
 });
 
-export type MissionPlan = z.infer<typeof MissionPlanSchema>;
+type ParsedMissionPlan = z.infer<typeof MissionPlanSchema>;
+
+export type MissionPlan = Omit<ParsedMissionPlan, "actions"> & {
+  actions: Array<
+    Omit<ParsedMissionPlan["actions"][number], "expectedContent">
+    & { expectedContent?: string | null }
+  >;
+};
 
 const NO_OP_ACTION_SUMMARY = [
   /^no\s+.+\s+(?:required|needed|necessary|planned|requested|performed)\.?$/i,
