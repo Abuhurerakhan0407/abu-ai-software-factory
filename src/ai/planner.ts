@@ -42,8 +42,8 @@ const REPOSITORY_FILE_TARGET = /^(?:\.github|api|docs|migrations|src|tests)\//i;
 
 const PLANNER_MAX_ATTEMPTS = 3;
 
-const EXACT_CONTENT_MARKER = /\b(?:containing exactly|(?:entire\\s+)?file content must be exactly)\\s*:?\\s*/i;
-const EXACT_CONTENT_CONTROL_BOUNDARY = /\\s+(?=(?:publication requirement\\s*:|publish changes?\\b|do not (?:modify|change|deploy|commit|push|publish)\\b))/i;
+const EXACT_CONTENT_MARKER = /\b(?:containing exactly|(?:entire\s+)?file content must be exactly)\s*:?\s*/i;
+const EXACT_CONTENT_CONTROL_BOUNDARY = /\s+(?=(?:publication requirement\s*:|publish changes?\b|do not (?:modify|change|deploy|commit|push|publish)\b))/i;
 
 export function applyDeterministicExactContent(
   request: string,
