@@ -38,6 +38,11 @@ export type CodeWorkerFn = (
   repositoryContext: readonly RepositoryContextFile[],
 ) => Promise<CodeWorkResult>;
 
+export type TestRunnerFn = (
+  task: TaskRecord,
+  action: PlannedAction,
+) => Promise<AgentWorkResult>;
+
 export type CodePublisherFn = (
   task: TaskRecord,
   action: PlannedAction,
@@ -97,6 +102,7 @@ export class MissionExecutor {
     private readonly stagingMigrationWorker: StagingMigrationWorkerFn = runStagingMigrationWorker,
     private readonly stagingDatabase?: StagingDatabaseFn,
     private readonly productionDeployment?: ProductionDeploymentFn,
+    private readonly testRunner?: TestRunnerFn,
   ) {
     this.control = new MissionControl(taskStore);
   }
@@ -131,6 +137,7 @@ export class MissionExecutor {
     for (const action of task.plan) {
       if (
         action.kind !== "analyze"
+        && action.kind !== "run_tests"
         && action.kind !== "modify_code"
         && action.kind !== "migrate_staging_db"
         && action.kind !== "deploy_production"
@@ -140,6 +147,16 @@ export class MissionExecutor {
           "human_required",
           "execution_engine",
           "Tool adapter not connected for " + action.kind,
+        );
+        return { task, results };
+      }
+
+      if (action.kind === "run_tests" && !this.testRunner) {
+        task = await this.control.transition(
+          task.id,
+          "human_required",
+          "qa_security",
+          "Sandbox test runner is unavailable",
         );
         return { task, results };
       }
@@ -231,6 +248,23 @@ export class MissionExecutor {
             "Vercel production rollout triggered; monitoring required",
           );
           return { task, results };
+        }
+
+        if (action.kind === "run_tests") {
+          const result = await this.testRunner!(task, action);
+          await this.runStore.finish(runRecord.id, "succeeded", result);
+          results.push({ actionId: action.id, result });
+
+          if (result.requiresHuman) {
+            task = await this.control.transition(
+              task.id,
+              "human_required",
+              "qa_security",
+              "Sandbox test runner requested human review",
+            );
+            return { task, results };
+          }
+          continue;
         }
 
         if (action.kind === "analyze") {
