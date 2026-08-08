@@ -10,6 +10,9 @@ export const MissionPlanSchema = z.object({
     z.object({
       kind: ActionKindSchema,
       summary: z.string().min(3).max(500),
+      expectedContent: z.string().max(10_000).optional().describe(
+        "Literal full file content only when the request explicitly specifies exact content. Omit otherwise.",
+      ),
       target: z.string().min(1).max(500),
       reversible: z.boolean(),
     }),
@@ -113,6 +116,9 @@ export async function createMissionPlan(request: string): Promise<MissionPlan> {
       "Every action in actions means work that WILL execute. Omit negated, hypothetical, informational, or no-op actions.",
       "Never add an action whose summary says that the action is not required, not needed, or will not be performed.",
       "Repository file creation, edits, or deletion—including docs, source, tests, config, and workflow files—must use modify_code.",
+      "When a repository-file request explicitly specifies exact literal full-file content, set expectedContent to only that literal content.",
+      "Keep publication, testing, review, deployment, and workflow instructions out of expectedContent unless the user explicitly includes them in the literal file content.",
+      "Omit expectedContent when exact literal full-file content is not specified.",
       "Never use database action kinds for repository files. write_production_db means changing live production database data, not files.",
     ].join(" "),
     outputType: MissionPlanSchema,
