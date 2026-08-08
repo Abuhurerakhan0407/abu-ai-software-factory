@@ -81,11 +81,38 @@ Production monitoring:
 Never commit real secret values.
 
 OpenRouter's free router is acceptable for development/testing. It should not be
-treated as a production reliability guarantee.
+treated as a production reliability guarantee. Set `MISSION_CONTROL_MODEL` to
+an explicit provider model before treating the factory as production-ready.
+`EXECUTION_AGENT_MODEL` may optionally override the worker model.
+
+### Readiness check
+
+`GET /api/health` reports two levels:
+
+- `ok` / `status` cover the core runtime needed to accept and execute factory work.
+- `productionReady` additionally requires the approval channel, Vercel monitoring,
+  and an explicit `MISSION_CONTROL_MODEL`.
+- `checks` contains booleans only; configured secret values are never returned.
+
+A missing core runtime dependency returns HTTP 503. Missing production-only
+configuration keeps core health available but leaves `productionReady: false`.
+
+## Exact-content code tasks
+
+When a task requires literal full-file content, make the boundary explicit. The
+recommended form is quoted:
+
+```text
+Create docs/example.md. Entire file content must be exactly "literal file content". Publication requirement: draft pull request only.
+```
+
+The planner also deterministically separates publication/safety instructions
+after `containing exactly:` when a task contains exactly one repository-file
+mutation. Quoting remains the clearest form for arbitrary literal text.
 
 ## HTTP control plane
 
-- `GET /api/health` — readiness
+- `GET /api/health` — core and production readiness
 - `POST /api/plan` — plan-only interface
 - `POST /api/execute` — execute an already planned task
 - `POST /api/approve` — separate production approval channel
@@ -112,4 +139,4 @@ npm test
 5. Staging and database safety gates — implemented
 6. Production deployment gates — implemented
 7. Production monitoring and rollback — implemented
-8. Autopilot and end-to-end hardening — final candidate
+8. Autopilot and end-to-end hardening — implemented
