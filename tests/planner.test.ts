@@ -52,6 +52,30 @@ describe("sanitizeMissionPlan", () => {
     expect(sanitized.actions[0]?.kind).toBe("access_raw_secret");
   });
 
+  it("rejects database actions that target repository files", () => {
+    expect(() => sanitizeMissionPlan(plan([
+      {
+        kind: "write_production_db",
+        summary: "Create documentation smoke-test file",
+        target: "docs/autopilot-agent-smoke.md",
+        reversible: true,
+      },
+    ]))).toThrow("repository file changes must use modify_code");
+  });
+
+  it("keeps repository file changes classified as modify_code", () => {
+    const sanitized = sanitizeMissionPlan(plan([
+      {
+        kind: "modify_code",
+        summary: "Create documentation smoke-test file",
+        target: "docs/autopilot-agent-smoke.md",
+        reversible: true,
+      },
+    ]));
+
+    expect(sanitized.actions[0]?.kind).toBe("modify_code");
+  });
+
   it("rejects plans containing only no-op actions", () => {
     expect(() => sanitizeMissionPlan(plan([
       {
