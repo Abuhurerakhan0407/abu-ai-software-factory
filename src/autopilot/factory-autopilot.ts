@@ -92,7 +92,18 @@ export class FactoryAutopilot {
     let steps = 0;
     while (steps < MAX_STEPS_PER_CALL) {
       if (task.status === "triaged") {
-        const plan = await this.planner(task.description);
+        let plan: MissionPlan;
+        try {
+          plan = await this.planner(task.description);
+        } catch {
+          task = await this.control.transition(
+            task.id,
+            "failed",
+            "mission_control",
+            "AI planning failed; no execution attempted",
+          );
+          return { task, steps, nextAction: "human_review" };
+        }
         task = await this.control.addPlan(
           task.id,
           plan.actions.map((action, index) => ({

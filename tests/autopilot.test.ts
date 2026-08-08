@@ -51,6 +51,32 @@ describe("FactoryAutopilot", () => {
     expect(result.task.audit.some((event) => event.event === "plan_added")).toBe(true);
   });
 
+  it("records planner failure without crashing the API workflow", async () => {
+    const tasks = new MemoryTaskStore();
+    const autopilot = new FactoryAutopilot(
+      tasks,
+      async () => {
+        throw new Error("provider returned malformed structured output");
+      },
+      async () => {
+        throw new Error("executor must not run");
+      },
+      async () => {
+        throw new Error("monitor must not run");
+      },
+    );
+
+    const result = await autopilot.run({
+      request: "Run existing automated tests only",
+    });
+
+    expect(result.task.status).toBe("failed");
+    expect(result.nextAction).toBe("human_review");
+    expect(result.task.audit.at(-1)?.detail).toContain(
+      "AI planning failed; no execution attempted",
+    );
+  });
+
   it("stops production work at human approval", async () => {
     const tasks = new MemoryTaskStore();
     let executeCalls = 0;
