@@ -8,6 +8,7 @@ import {
 import { StagingDatabaseGate } from "../src/database/staging-database-gate.js";
 import { ProductionDeploymentGate } from "../src/deployment/production-deployment-gate.js";
 import { ProductionMonitor } from "../src/deployment/production-monitor.js";
+import { SandboxVerifier } from "../src/execution/sandbox-verifier.js";
 import { VerifiedCodePublisher } from "../src/execution/verified-code-publisher.js";
 import { SafeCodePublisher } from "../src/github/safe-code-publisher.js";
 import { SafeRepositoryNavigator } from "../src/github/safe-repository-navigator.js";
@@ -78,6 +79,7 @@ export async function POST(request: Request): Promise<Response> {
     const codePublisher = new VerifiedCodePublisher(new SafeCodePublisher(projects));
     const stagingDatabase = new StagingDatabaseGate(projects);
     const productionDeployment = new ProductionDeploymentGate(projects);
+    const sandboxVerifier = new SandboxVerifier();
     const executor = new MissionExecutor(
       tasks,
       getProductionAgentRunStore(),
@@ -89,6 +91,39 @@ export async function POST(request: Request): Promise<Response> {
       undefined,
       (task, action, work) => stagingDatabase.apply(task, action, work),
       (task, action) => productionDeployment.deploy(task, action),
+      async (task) => {
+        const project = task.projectId
+          ? await projects.get(task.projectId)
+          : (await projects.list()).filter((candidate) => candidate.status === "active").at(0);
+        const activeProjects = task.projectId
+          ? project
+            ? [project]
+            : []
+          : (await projects.list()).filter((candidate) => candidate.status === "active");
+
+        if (!project || project.status !== "active" || activeProjects.length !== 1) {
+          return {
+            summary: "Sandbox tests need one unambiguous active project",
+            evidence: [],
+            recommendations: ["Select an active project before running tests"],
+            requiresHuman: true,
+          };
+        }
+
+        const verification = await sandboxVerifier.verify({
+          repository: project.repository,
+          ref: "main",
+        });
+        return {
+          summary: verification.summary,
+          evidence: verification.checks.map((check) =>
+            check.label + ": " + (check.exitCode === 0 ? "passed" : "failed")),
+          recommendations: verification.passed
+            ? []
+            : ["Review the failed isolated sandbox check"],
+          requiresHuman: !verification.passed,
+        };
+      },
     );
     const monitor = new ProductionMonitor(tasks, projects);
     const autopilot = new FactoryAutopilot(
