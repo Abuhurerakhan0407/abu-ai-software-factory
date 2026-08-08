@@ -389,16 +389,17 @@ export class MissionExecutor {
         );
         return { task, results };
       } catch (error) {
+        const failure = safeWorkerFailure(error);
         await this.runStore.finish(
           runRecord.id,
           "failed",
-          safeWorkerFailure(error),
+          failure,
         );
         task = await this.control.transition(
           task.id,
           "failed",
           "execution_engine",
-          "Worker execution failed",
+          "Worker execution failed (" + failure.errorName + "): " + failure.errorMessage,
         );
         return { task, results };
       }

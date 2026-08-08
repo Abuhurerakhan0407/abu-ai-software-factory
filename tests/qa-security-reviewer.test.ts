@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   exactContentReview,
+  parseQaSecurityReviewJson,
   qaReviewBlocks,
   type QaSecurityReview,
 } from "../src/agents/qa-security-reviewer.js";
@@ -71,5 +72,23 @@ describe("exactContentReview", () => {
         path: action.target,
       }],
     });
+  });
+});
+
+
+describe("parseQaSecurityReviewJson", () => {
+  const payload = {
+    verdict: "pass" as const,
+    summary: "Independent review passed",
+    findings: [],
+  };
+
+  it("accepts raw JSON recovery output", () => {
+    expect(parseQaSecurityReviewJson(JSON.stringify(payload))).toEqual(payload);
+  });
+
+  it("accepts a single JSON code fence", () => {
+    const fenced = "```json\n" + JSON.stringify(payload) + "\n```";
+    expect(parseQaSecurityReviewJson(fenced)).toEqual(payload);
   });
 });
