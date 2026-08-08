@@ -28,6 +28,8 @@ const NO_OP_ACTION_SUMMARY = [
   /^(?:none|nothing)\s+(?:required|needed|necessary|to do)\.?$/i,
 ];
 
+const REPOSITORY_FILE_TARGET = /^(?:\.github|api|docs|migrations|src|tests)\//i;
+
 const PLANNER_MAX_ATTEMPTS = 3;
 
 function isNoOpActionSummary(summary: string): boolean {
@@ -35,7 +37,25 @@ function isNoOpActionSummary(summary: string): boolean {
   return NO_OP_ACTION_SUMMARY.some((pattern) => pattern.test(normalized));
 }
 
+function assertActionTargetCompatibility(action: MissionPlan["actions"][number]): void {
+  const target = action.target.trim().replace(/\\/g, "/");
+  const isRepositoryFile = REPOSITORY_FILE_TARGET.test(target);
+  const isDatabaseAction = [
+    "migrate_staging_db",
+    "read_production_db",
+    "write_production_db",
+    "delete_production_data",
+  ].includes(action.kind);
+
+  if (isRepositoryFile && isDatabaseAction) {
+    throw new Error(
+      "Planner action kind/target mismatch: repository file changes must use modify_code",
+    );
+  }
+}
+
 export function sanitizeMissionPlan(plan: MissionPlan): MissionPlan {
+  plan.actions.forEach(assertActionTargetCompatibility);
   const actions = plan.actions.filter((action) => !isNoOpActionSummary(action.summary));
   if (actions.length === 0) {
     throw new Error("Planner returned no executable actions");
@@ -92,6 +112,8 @@ export async function createMissionPlan(request: string): Promise<MissionPlan> {
       "Use delete_production_data, change_auth, change_billing, or access_raw_secret only when truly required.",
       "Every action in actions means work that WILL execute. Omit negated, hypothetical, informational, or no-op actions.",
       "Never add an action whose summary says that the action is not required, not needed, or will not be performed.",
+      "Repository file creation, edits, or deletion—including docs, source, tests, config, and workflow files—must use modify_code.",
+      "Never use database action kinds for repository files. write_production_db means changing live production database data, not files.",
     ].join(" "),
     outputType: MissionPlanSchema,
   });
