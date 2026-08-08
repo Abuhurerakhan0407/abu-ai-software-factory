@@ -1,0 +1,1 @@
+Autopilot coding-agent smoke test passed. Publish changes only through a draft pull request.
