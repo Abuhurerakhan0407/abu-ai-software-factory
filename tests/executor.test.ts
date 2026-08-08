@@ -126,7 +126,13 @@ describe("MissionExecutor", () => {
 
     expect(mission.task.status).toBe("failed");
     expect(workerCalled).toBe(false);
-    expect([...runStore.runs.values()][0]?.status).toBe("failed");
+    const failedRun = [...runStore.runs.values()][0];
+    expect(failedRun?.status).toBe("failed");
+    expect(failedRun?.output).toEqual({
+      error: "worker_failed",
+      errorName: "Error",
+      errorMessage: "repository unavailable",
+    });
   });
 
   it("fails closed when a mutating tool adapter is unavailable", async () => {
