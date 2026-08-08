@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   applyDeterministicExactContent,
+  PlannerTimeoutError,
   retryPlannerOperation,
   sanitizeMissionPlan,
   type MissionPlan,
@@ -181,6 +182,15 @@ describe("retryPlannerOperation", () => {
 
     await expect(retryPlannerOperation(operation)).resolves.toBe("valid plan");
     expect(operation).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry a timed-out model call", async () => {
+    const operation = vi.fn().mockRejectedValue(new PlannerTimeoutError(30_000));
+
+    await expect(retryPlannerOperation(operation)).rejects.toThrow(
+      "Planner model call timed out after 30000ms",
+    );
+    expect(operation).toHaveBeenCalledTimes(1);
   });
 
   it("fails closed after the bounded retry budget is exhausted", async () => {
