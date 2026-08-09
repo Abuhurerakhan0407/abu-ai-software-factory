@@ -5,6 +5,8 @@ import { withAgentModelTimeout } from "./model-timeout.js";
 import type { PlannedAction, TaskRecord } from "../contracts/task.js";
 import type { RepositoryContextFile } from "../github/repository-context.js";
 
+const CODE_WORKER_MODEL_TIMEOUT_MS = 90_000;
+
 const CodeChangeBaseSchema = z.object({
   operation: z.enum(["create", "update"]),
   path: z.string().min(1).max(500),
@@ -188,5 +190,5 @@ export async function runCodeWorker(
       }
       return parseCodeWorkJson(recovery.finalOutput);
     }
-  });
+  }, CODE_WORKER_MODEL_TIMEOUT_MS);
 }
