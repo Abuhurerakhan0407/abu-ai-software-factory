@@ -6,6 +6,7 @@ import type { PlannedAction, TaskRecord } from "../contracts/task.js";
 import type { SandboxVerification } from "../execution/sandbox-verifier.js";
 import type { CodeWorkResult } from "./code-worker.js";
 
+const REPAIR_WORKER_MODEL_TIMEOUT_MS = 90_000;
 const MAX_REPAIR_SOURCE_CHARS = 48_000;
 const MAX_REPAIR_LOG_CHARS = 6_000;
 const MAX_REPAIR_PATHS = 240;
@@ -150,5 +151,5 @@ export async function runRepairWorker(
       throw new Error("Repair worker output was not text");
     }
     return parseRepairWorkJson(result.finalOutput);
-  });
+  }, REPAIR_WORKER_MODEL_TIMEOUT_MS);
 }
