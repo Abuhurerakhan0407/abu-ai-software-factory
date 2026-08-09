@@ -1,6 +1,7 @@
 import { Agent, run } from "@openai/agents";
 import { OpenAIProvider } from "@openai/agents-openai";
 import { z } from "zod";
+import { withAgentModelTimeout } from "./model-timeout.js";
 import type { PlannedAction, TaskRecord } from "../contracts/task.js";
 import type { SandboxVerification } from "../execution/sandbox-verifier.js";
 import { redactRepositorySecrets } from "../github/source-context.js";
@@ -186,31 +187,33 @@ export async function runQaSecurityReview(
     instructions: jsonInstructions,
   });
 
-  const result = await run(reviewer, input);
-  if (typeof result.finalOutput !== "string") {
-    throw new Error("QA reviewer output was not text");
-  }
-
-  try {
-    return parseQaSecurityReviewJson(result.finalOutput);
-  } catch {
-    const recoveryReviewer = new Agent({
-      name: "Independent QA Security Reviewer JSON Recovery",
-      model,
-      instructions: [
-        jsonInstructions,
-        "Repair the supplied invalid output into valid JSON matching the required object shape.",
-        "Return the repaired JSON object only.",
-      ].join(" "),
-    });
-    const recoveryInput = JSON.stringify({
-      originalInput: input,
-      invalidOutput: result.finalOutput,
-    });
-    const recovery = await run(recoveryReviewer, recoveryInput);
-    if (typeof recovery.finalOutput !== "string") {
-      throw new Error("QA recovery output was not text");
+  return withAgentModelTimeout("QA reviewer", async (signal) => {
+    const result = await run(reviewer, input, { signal });
+    if (typeof result.finalOutput !== "string") {
+      throw new Error("QA reviewer output was not text");
     }
-    return parseQaSecurityReviewJson(recovery.finalOutput);
-  }
+
+    try {
+      return parseQaSecurityReviewJson(result.finalOutput);
+    } catch {
+      const recoveryReviewer = new Agent({
+        name: "Independent QA Security Reviewer JSON Recovery",
+        model,
+        instructions: [
+          jsonInstructions,
+          "Repair the supplied invalid output into valid JSON matching the required object shape.",
+          "Return the repaired JSON object only.",
+        ].join(" "),
+      });
+      const recoveryInput = JSON.stringify({
+        originalInput: input,
+        invalidOutput: result.finalOutput,
+      });
+      const recovery = await run(recoveryReviewer, recoveryInput, { signal });
+      if (typeof recovery.finalOutput !== "string") {
+        throw new Error("QA recovery output was not text");
+      }
+      return parseQaSecurityReviewJson(recovery.finalOutput);
+    }
+  });
 }
