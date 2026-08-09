@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   applyDeterministicExactContent,
+  normalizePlannerCategory,
   parseMissionPlanJson,
   PlannerTimeoutError,
   retryPlannerOperation,
@@ -168,6 +169,20 @@ describe("applyDeterministicExactContent", () => {
   });
 });
 
+describe("normalizePlannerCategory", () => {
+  it("maps testing output to the supported feature category", () => {
+    expect(normalizePlannerCategory("testing")).toBe("feature");
+  });
+
+  it("maps authentication output to security", () => {
+    expect(normalizePlannerCategory("authentication")).toBe("security");
+  });
+
+  it("fails unknown categories into other", () => {
+    expect(normalizePlannerCategory("unexpected-provider-label")).toBe("other");
+  });
+});
+
 describe("parseMissionPlanJson", () => {
   const expected = {
     summary: "Analyze repository architecture",
@@ -183,6 +198,12 @@ describe("parseMissionPlanJson", () => {
 
   it("parses a raw JSON plan", () => {
     expect(parseMissionPlanJson(JSON.stringify(expected))).toEqual(expected);
+  });
+
+  it("normalizes an unsupported model category before validation", () => {
+    const output = JSON.stringify({ ...expected, category: "testing" });
+
+    expect(parseMissionPlanJson(output).category).toBe("feature");
   });
 
   it("accepts one Markdown JSON fence from free models", () => {
