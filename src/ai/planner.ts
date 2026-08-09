@@ -50,6 +50,25 @@ export class PlannerTimeoutError extends Error {
   }
 }
 
+export function isPlannerQuotaError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+
+  const record = error as Record<string, unknown>;
+  const status = record.status;
+  const code = record.code;
+  if (status === 429 || status === "429" || code === 429 || code === "429") {
+    return true;
+  }
+
+  const message = error instanceof Error
+    ? error.message
+    : typeof record.message === "string"
+      ? record.message
+      : "";
+
+  return /free-models-per-day|rate limit exceeded/i.test(message);
+}
+
 const EXACT_CONTENT_MARKER = /\b(?:containing exactly|(?:entire\s+)?file content must be exactly)\s*:?\s*/i;
 const EXACT_CONTENT_CONTROL_BOUNDARY = /\s+(?=(?:publication requirement\s*:|publish changes?\b|do not (?:modify|change|deploy|commit|push|publish)\b))/i;
 
@@ -130,7 +149,7 @@ export async function retryPlannerOperation<T>(
     try {
       return await operation();
     } catch (error) {
-      if (error instanceof PlannerTimeoutError) {
+      if (error instanceof PlannerTimeoutError || isPlannerQuotaError(error)) {
         throw error;
       }
       lastError = error;
