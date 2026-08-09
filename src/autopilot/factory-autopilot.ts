@@ -63,6 +63,17 @@ const MAX_EVIDENCE_ACTIONS = 10;
 const MAX_EVIDENCE_ITEMS = 10;
 const MAX_RECOMMENDATIONS = 5;
 const MAX_EVIDENCE_TEXT = 500;
+const STALE_EXECUTION_MS = 6 * 60_000;
+
+export function isStaleAutonomousExecution(
+  task: TaskRecord,
+  now = Date.now(),
+): boolean {
+  const updatedAt = Date.parse(task.updatedAt);
+  return task.status === "executing"
+    && Number.isFinite(updatedAt)
+    && now - updatedAt >= STALE_EXECUTION_MS;
+}
 
 function sanitizeEvidenceText(value: string): string {
   return value
@@ -203,6 +214,15 @@ export class FactoryAutopilot {
       }
 
       if (task.status === "executing") {
+        if (isStaleAutonomousExecution(task)) {
+          task = await this.control.transition(
+            task.id,
+            "failed",
+            "execution_engine",
+            "Stale autonomous execution exceeded runtime limit; no automatic resume attempted",
+          );
+          return { task, steps, nextAction: "human_review", evidence };
+        }
         throw new AutopilotError(
           "unsafe_resume",
           "Only SHA-bound approved production execution may resume autonomously",
