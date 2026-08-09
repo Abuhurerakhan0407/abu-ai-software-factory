@@ -1,6 +1,7 @@
 import { Agent, run } from "@openai/agents";
 import { OpenAIProvider } from "@openai/agents-openai";
 import { z } from "zod";
+import { withAgentModelTimeout } from "./model-timeout.js";
 import type { PlannedAction, TaskRecord } from "../contracts/task.js";
 import type { RepositoryContextFile } from "../github/repository-context.js";
 import { redactRepositorySecrets } from "../github/source-context.js";
@@ -94,16 +95,18 @@ export async function runStagingMigrationWorker(
     outputType: StagingMigrationWorkSchema,
   });
 
-  const result = await run(worker, JSON.stringify({
-    task: {
-      title: task.title,
-      description: task.description,
-      category: task.category,
-      risk: task.risk,
-    },
-    action,
-    repositoryContext: boundedContext,
-  }));
+  return withAgentModelTimeout("Staging migration worker", async (signal) => {
+    const result = await run(worker, JSON.stringify({
+      task: {
+        title: task.title,
+        description: task.description,
+        category: task.category,
+        risk: task.risk,
+      },
+      action,
+      repositoryContext: boundedContext,
+    }), { signal });
 
-  return StagingMigrationWorkSchema.parse(result.finalOutput);
+    return StagingMigrationWorkSchema.parse(result.finalOutput);
+  });
 }
