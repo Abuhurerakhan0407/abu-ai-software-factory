@@ -143,30 +143,41 @@ export function applyDeterministicExactContent(
   request: string,
   plan: MissionPlan,
 ): MissionPlan {
+  const literalFreePlan: MissionPlan = {
+    ...plan,
+    actions: plan.actions.map((action) => ({
+      ...action,
+      expectedContent: null,
+    })),
+  };
   const marker = EXACT_CONTENT_MARKER.exec(request);
-  if (!marker) return plan;
+  if (!marker) return literalFreePlan;
 
-  const codeActions = plan.actions.filter((action) => action.kind === "modify_code");
-  if (codeActions.length !== 1) return plan;
+  const codeActions = literalFreePlan.actions.filter(
+    (action) => action.kind === "modify_code",
+  );
+  if (codeActions.length !== 1) return literalFreePlan;
 
   const remainder = request.slice(marker.index + marker[0].length).trimStart();
-  if (!remainder) return plan;
+  if (!remainder) return literalFreePlan;
 
   let expectedContent: string;
   const quote = remainder[0];
   if (quote === "\"" || quote === "'" || quote === "`") {
     const closingQuote = remainder.indexOf(quote, 1);
-    if (closingQuote < 1) return plan;
+    if (closingQuote < 1) return literalFreePlan;
     expectedContent = remainder.slice(1, closingQuote);
   } else {
     expectedContent = remainder.split(EXACT_CONTENT_CONTROL_BOUNDARY, 1)[0]?.trim() ?? "";
   }
 
-  if (!expectedContent || expectedContent.length > 10_000) return plan;
+  if (!expectedContent || expectedContent.length > 10_000) {
+    return literalFreePlan;
+  }
 
   return {
-    ...plan,
-    actions: plan.actions.map((action) => action === codeActions[0]
+    ...literalFreePlan,
+    actions: literalFreePlan.actions.map((action) => action === codeActions[0]
       ? { ...action, expectedContent }
       : action),
   };
