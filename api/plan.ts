@@ -1,6 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { createMissionPlan } from "../src/ai/planner.js";
+import {
+  createMissionPlan,
+  isPlannerQuotaError,
+} from "../src/ai/planner.js";
 
 const PlanRequestSchema = z.object({
   request: z.string().min(3).max(10_000),
@@ -123,7 +126,17 @@ export async function POST(request: Request): Promise<Response> {
     return json({ ok: true, plan });
   } catch (error) {
     const diagnostic = plannerErrorDiagnostic(error);
-    console.error("planning_failed", diagnostic);
-    return json({ error: "planning_failed", diagnostic }, 502);
+    const quotaExhausted = isPlannerQuotaError(error);
+    console.error(
+      quotaExhausted ? "planning_rate_limited" : "planning_failed",
+      diagnostic,
+    );
+    return json(
+      {
+        error: quotaExhausted ? "planning_rate_limited" : "planning_failed",
+        diagnostic,
+      },
+      quotaExhausted ? 429 : 502,
+    );
   }
 }
