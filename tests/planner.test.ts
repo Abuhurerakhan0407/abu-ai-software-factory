@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   applyDeterministicExactContent,
+  parseMissionPlanJson,
   PlannerTimeoutError,
   retryPlannerOperation,
   sanitizeMissionPlan,
@@ -164,6 +165,37 @@ describe("applyDeterministicExactContent", () => {
       "Create docs/one.md containing exactly: hello",
       original,
     )).toEqual(original);
+  });
+});
+
+describe("parseMissionPlanJson", () => {
+  const expected = {
+    summary: "Analyze repository architecture",
+    category: "docs",
+    actions: [{
+      kind: "analyze",
+      summary: "Analyze README architecture",
+      expectedContent: null,
+      target: "README.md",
+      reversible: false,
+    }],
+  };
+
+  it("parses a raw JSON plan", () => {
+    expect(parseMissionPlanJson(JSON.stringify(expected))).toEqual(expected);
+  });
+
+  it("accepts one Markdown JSON fence from free models", () => {
+    const fence = String.fromCharCode(96).repeat(3);
+    const output = fence + "json\n" + JSON.stringify(expected) + "\n" + fence;
+
+    expect(parseMissionPlanJson(output)).toEqual(expected);
+  });
+
+  it("rejects prose around a JSON object", () => {
+    expect(() => parseMissionPlanJson(
+      "Here is the plan: " + JSON.stringify(expected),
+    )).toThrow();
   });
 });
 
