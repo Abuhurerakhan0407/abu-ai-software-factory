@@ -54,6 +54,7 @@ export type SandboxVerification = {
   repairable: boolean;
   checks: SandboxCheckResult[];
   summary: string;
+  repositoryPaths?: string[];
 };
 
 type GatewayReader = Pick<GitHubGateway, "listTree" | "getFile">;
@@ -313,6 +314,7 @@ export class SandboxVerifier {
             repairable: true,
             checks,
             summary: check.label + " failed in the isolated sandbox",
+            repositoryPaths: files.map((file) => file.path),
           };
         }
       }
