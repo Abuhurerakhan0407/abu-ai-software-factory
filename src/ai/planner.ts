@@ -45,7 +45,7 @@ const NO_OP_ACTION_SUMMARY = [
 const REPOSITORY_FILE_TARGET = /^(?:\.github|api|docs|migrations|src|tests)\//i;
 
 const PLANNER_MAX_ATTEMPTS = 3;
-const PLANNER_ATTEMPT_TIMEOUT_MS = 30_000;
+const PLANNER_ATTEMPT_TIMEOUT_MS = 60_000;
 
 export class PlannerTimeoutError extends Error {
   constructor(timeoutMs: number) {
