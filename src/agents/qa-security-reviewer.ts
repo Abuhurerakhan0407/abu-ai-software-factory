@@ -45,10 +45,6 @@ async function createReviewerModel() {
   }).getModel(executionModelName());
 }
 
-function isInvalidStructuredOutput(error: unknown): error is Error {
-  return error instanceof Error && error.name === "ModelBehaviorError";
-}
-
 export function parseQaSecurityReviewJson(output: string): QaSecurityReview {
   const trimmed = output.trim();
   const fenced = trimmed.match(/^\x60\x60\x60(?:json)?\s*([\s\S]*?)\s*\x60\x60\x60$/i);
@@ -177,38 +173,44 @@ export async function runQaSecurityReview(
       exitCode: check.exitCode,
     })),
   });
+  const jsonInstructions = [
+    instructions,
+    "Return exactly one JSON object and nothing else.",
+    "The object must have keys verdict, summary, findings.",
+    "verdict must be pass or human_required.",
+    "Each finding must have severity, category, path, summary, recommendation.",
+  ].join(" ");
   const reviewer = new Agent({
     name: "Independent QA Security Reviewer",
     model,
-    instructions,
-    outputType: QaSecurityReviewSchema,
+    instructions: jsonInstructions,
   });
 
-  try {
-    const result = await run(reviewer, input);
-    return QaSecurityReviewSchema.parse(result.finalOutput);
-  } catch (error) {
-    if (!isInvalidStructuredOutput(error)) throw error;
+  const result = await run(reviewer, input);
+  if (typeof result.finalOutput !== "string") {
+    throw new Error("QA reviewer output was not text");
+  }
 
+  try {
+    return parseQaSecurityReviewJson(result.finalOutput);
+  } catch {
     const recoveryReviewer = new Agent({
       name: "Independent QA Security Reviewer JSON Recovery",
       model,
       instructions: [
-        instructions,
-        "The previous structured response was invalid.",
-        "Return exactly one JSON object and nothing else.",
-        "The object must have keys verdict, summary, findings.",
+        jsonInstructions,
+        "Repair the supplied invalid output into valid JSON matching the required object shape.",
+        "Return the repaired JSON object only.",
       ].join(" "),
     });
-
-    try {
-      const recovery = await run(recoveryReviewer, input);
-      if (typeof recovery.finalOutput !== "string") {
-        throw new Error("QA recovery output was not text");
-      }
-      return parseQaSecurityReviewJson(recovery.finalOutput);
-    } catch {
-      throw error;
+    const recoveryInput = JSON.stringify({
+      originalInput: input,
+      invalidOutput: result.finalOutput,
+    });
+    const recovery = await run(recoveryReviewer, recoveryInput);
+    if (typeof recovery.finalOutput !== "string") {
+      throw new Error("QA recovery output was not text");
     }
+    return parseQaSecurityReviewJson(recovery.finalOutput);
   }
 }

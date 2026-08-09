@@ -62,15 +62,41 @@ async function createWorkerModel() {
   }).getModel(executionModelName());
 }
 
-function isInvalidStructuredOutput(error: unknown): error is Error {
-  return error instanceof Error && error.name === "ModelBehaviorError";
-}
-
 export function parseCodeWorkJson(output: string): CodeWorkResult {
   const trimmed = output.trim();
   const fenced = trimmed.match(/^\x60\x60\x60(?:json)?\s*([\s\S]*?)\s*\x60\x60\x60$/i);
   const candidate = fenced?.[1] ?? trimmed;
   return CodeWorkResultSchema.parse(JSON.parse(candidate));
+}
+
+export function exactContentCodeWork(
+  action: PlannedAction,
+  repositoryContext: readonly RepositoryContextFile[],
+): CodeWorkResult | undefined {
+  if (action.expectedContent == null) return undefined;
+
+  const target = action.target.replace(/\\/g, "/");
+  const existing = repositoryContext.find(
+    (file) => file.path.replace(/\\/g, "/") === target,
+  );
+  const change: CodeChange = existing
+    ? {
+        operation: "update",
+        path: target,
+        sourceSha: existing.sha,
+        content: action.expectedContent,
+      }
+    : {
+        operation: "create",
+        path: target,
+        content: action.expectedContent,
+      };
+
+  return {
+    summary: "Prepared exact planned content for " + target,
+    changes: [change],
+    requiresHuman: false,
+  };
 }
 
 export async function runCodeWorker(
@@ -88,6 +114,9 @@ export async function runCodeWorker(
       requiresHuman: true,
     };
   }
+
+  const exactContentWork = exactContentCodeWork(action, repositoryContext);
+  if (exactContentWork) return exactContentWork;
 
   const model = await createWorkerModel();
   const instructions = [
@@ -117,38 +146,44 @@ export async function runCodeWorker(
     repositoryContext,
   });
 
+  const jsonInstructions = [
+    instructions,
+    "Return exactly one JSON object and nothing else.",
+    "The object must have keys summary, changes, requiresHuman.",
+    "Each changes item must have operation, path, content, and sourceSha only for updates.",
+    "requiresHuman must be a JSON boolean.",
+  ].join(" ");
   const worker = new Agent({
     name: "Factory Code Worker",
     model,
-    instructions,
-    outputType: CodeWorkResultSchema,
+    instructions: jsonInstructions,
   });
 
-  try {
-    const result = await run(worker, input);
-    return CodeWorkResultSchema.parse(result.finalOutput);
-  } catch (error) {
-    if (!isInvalidStructuredOutput(error)) throw error;
+  const result = await run(worker, input);
+  if (typeof result.finalOutput !== "string") {
+    throw new Error("Code worker output was not text");
+  }
 
+  try {
+    return parseCodeWorkJson(result.finalOutput);
+  } catch {
     const recoveryWorker = new Agent({
       name: "Factory Code Worker JSON Recovery",
       model,
       instructions: [
-        instructions,
-        "The previous structured response was invalid.",
-        "Return exactly one JSON object and nothing else.",
-        "The object must have keys summary, changes, requiresHuman.",
-        "Each changes item must have operation, path, content, and sourceSha only for updates.",
-        "requiresHuman must be a JSON boolean.",
+        jsonInstructions,
+        "Repair the supplied invalid output into valid JSON matching the required object shape.",
+        "Return the repaired JSON object only.",
       ].join(" "),
     });
-
-    try {
-      const recovery = await run(recoveryWorker, input);
-      if (typeof recovery.finalOutput !== "string") throw new Error("Recovery output was not text");
-      return parseCodeWorkJson(recovery.finalOutput);
-    } catch {
-      throw error;
+    const recoveryInput = JSON.stringify({
+      originalInput: input,
+      invalidOutput: result.finalOutput,
+    });
+    const recovery = await run(recoveryWorker, recoveryInput);
+    if (typeof recovery.finalOutput !== "string") {
+      throw new Error("Recovery output was not text");
     }
+    return parseCodeWorkJson(recovery.finalOutput);
   }
 }
