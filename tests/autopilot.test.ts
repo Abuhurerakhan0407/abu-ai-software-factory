@@ -157,6 +157,35 @@ describe("FactoryAutopilot", () => {
     );
   });
 
+  it("defers planner quota exhaustion for human review", async () => {
+    const tasks = new MemoryTaskStore();
+    const autopilot = new FactoryAutopilot(
+      tasks,
+      async () => {
+        throw Object.assign(
+          new Error("429 Rate limit exceeded: free-models-per-day"),
+          { status: 429, code: 429 },
+        );
+      },
+      async () => {
+        throw new Error("executor must not run");
+      },
+      async () => {
+        throw new Error("monitor must not run");
+      },
+    );
+
+    const result = await autopilot.run({
+      request: "Run existing automated tests only",
+    });
+
+    expect(result.task.status).toBe("human_required");
+    expect(result.nextAction).toBe("human_review");
+    expect(result.task.audit.at(-1)?.detail).toContain(
+      "AI planning quota exhausted",
+    );
+  });
+
   it("stops production work at human approval", async () => {
     const tasks = new MemoryTaskStore();
     let executeCalls = 0;

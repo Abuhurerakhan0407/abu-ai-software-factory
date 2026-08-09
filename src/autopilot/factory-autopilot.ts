@@ -1,4 +1,7 @@
-import type { MissionPlan } from "../ai/planner.js";
+import {
+  isPlannerQuotaError,
+  type MissionPlan,
+} from "../ai/planner.js";
 import type { TaskRecord, TaskStatus } from "../contracts/task.js";
 import { MissionControl } from "../mission-control/mission-control.js";
 import type { TaskStore } from "../store/task-store.js";
@@ -160,12 +163,15 @@ export class FactoryAutopilot {
         let plan: MissionPlan;
         try {
           plan = await this.planner(task.description);
-        } catch {
+        } catch (error) {
+          const quotaExhausted = isPlannerQuotaError(error);
           task = await this.control.transition(
             task.id,
-            "failed",
+            quotaExhausted ? "human_required" : "failed",
             "mission_control",
-            "AI planning failed; no execution attempted",
+            quotaExhausted
+              ? "AI planning quota exhausted; retry after provider quota reset or configure paid capacity"
+              : "AI planning failed; no execution attempted",
           );
           return { task, steps, nextAction: "human_review", evidence };
         }

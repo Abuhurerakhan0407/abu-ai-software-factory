@@ -193,6 +193,17 @@ describe("retryPlannerOperation", () => {
     expect(operation).toHaveBeenCalledTimes(1);
   });
 
+  it("does not retry when the provider quota is exhausted", async () => {
+    const rateLimit = Object.assign(
+      new Error("429 Rate limit exceeded: free-models-per-day"),
+      { status: 429, code: 429 },
+    );
+    const operation = vi.fn().mockRejectedValue(rateLimit);
+
+    await expect(retryPlannerOperation(operation)).rejects.toBe(rateLimit);
+    expect(operation).toHaveBeenCalledTimes(1);
+  });
+
   it("fails closed after the bounded retry budget is exhausted", async () => {
     const operation = vi.fn().mockRejectedValue(new Error("planner unavailable"));
 
