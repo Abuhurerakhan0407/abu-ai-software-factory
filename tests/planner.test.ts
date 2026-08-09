@@ -93,6 +93,21 @@ describe("sanitizeMissionPlan", () => {
 });
 
 describe("applyDeterministicExactContent", () => {
+  it("clears model-invented content when request is not exact", () => {
+    const sanitized = applyDeterministicExactContent(
+      "Create one focused test file without modifying existing files.",
+      plan([{
+        kind: "modify_code",
+        summary: "Create generated test file",
+        target: "tests/planner-whitespace.test.ts",
+        expectedContent: "invented invalid source",
+        reversible: true,
+      }]),
+    );
+
+    expect(sanitized.actions[0]?.expectedContent).toBeNull();
+  });
+
   it("keeps publication instructions out of unquoted exact content", () => {
     const sanitized = applyDeterministicExactContent(
       "Create docs/autopilot-agent-smoke.md containing exactly: Autopilot coding-agent smoke test passed. Publish changes only through a draft pull request.",
