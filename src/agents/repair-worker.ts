@@ -33,7 +33,7 @@ export type RepairWorkResult = z.infer<typeof RepairWorkResultSchema>;
 
 export function parseRepairWorkJson(output: string): RepairWorkResult {
   const trimmed = output.trim();
-  const fenced = trimmed.match(/^\\x60\\x60\\x60(?:json)?\\s*([\\s\\S]*?)\\s*\\x60\\x60\\x60$/i);
+  const fenced = trimmed.match(/^\x60\x60\x60(?:json)?\s*([\s\S]*?)\s*\x60\x60\x60$/i);
   const candidate = fenced?.[1] ?? trimmed;
   return RepairWorkResultSchema.parse(JSON.parse(candidate));
 }
