@@ -17,14 +17,15 @@ describe("parseMissionPlanJson whitespace handling", () => {
 
   it("accepts valid JSON with leading and trailing whitespace", () => {
     const whitespaceJson = `
-      ${JSON.stringify(payload)}
-    `;
+${JSON.stringify(payload)}
+`;
     expect(parseMissionPlanJson(whitespaceJson)).toEqual(payload);
   });
 
   it("accepts JSON wrapped in Markdown code fences with whitespace", () => {
     const fencedWithWhitespace = `
-      \n```json\n${JSON.stringify(payload)}\n```\n    `;
+\n```json\n${JSON.stringify(payload)}\n```\n
+`;
     expect(parseMissionPlanJson(fencedWithWhitespace)).toEqual(payload);
   });
 });
