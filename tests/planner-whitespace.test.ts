@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseMissionPlanJson } from "../src/planner/planner.js";
+import { parseMissionPlanJson } from "../src/ai/planner.js";
 
 describe("parseMissionPlanJson whitespace handling", () => {
   const validPayload = {
