@@ -1,6 +1,7 @@
 import { Agent, run } from "@openai/agents";
 import { OpenAIProvider } from "@openai/agents-openai";
 import { z } from "zod";
+import { withAgentModelTimeout } from "./model-timeout.js";
 import type { PlannedAction, TaskRecord } from "../contracts/task.js";
 import type { SandboxVerification } from "../execution/sandbox-verifier.js";
 import type { CodeWorkResult } from "./code-worker.js";
@@ -117,18 +118,20 @@ export async function runRepairWorker(
     outputType: RepairWorkResultSchema,
   });
 
-  const result = await run(worker, JSON.stringify({
-    task: {
-      title: task.title,
-      description: task.description,
-      category: task.category,
-      risk: task.risk,
-    },
-    action,
-    allowedPaths,
-    generatedSource: boundedChangedSource(initialWork),
-    sandboxFailure: failureEvidence(verification),
-  }));
+  return withAgentModelTimeout("Repair worker", async (signal) => {
+    const result = await run(worker, JSON.stringify({
+      task: {
+        title: task.title,
+        description: task.description,
+        category: task.category,
+        risk: task.risk,
+      },
+      action,
+      allowedPaths,
+      generatedSource: boundedChangedSource(initialWork),
+      sandboxFailure: failureEvidence(verification),
+    }), { signal });
 
-  return RepairWorkResultSchema.parse(result.finalOutput);
+    return RepairWorkResultSchema.parse(result.finalOutput);
+  });
 }
