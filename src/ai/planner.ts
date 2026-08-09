@@ -69,6 +69,15 @@ export function isPlannerQuotaError(error: unknown): boolean {
   return /free-models-per-day|rate limit exceeded/i.test(message);
 }
 
+export function parseMissionPlanJson(output: string): MissionPlan {
+  const trimmed = output.trim();
+  const fenced = trimmed.match(
+    /^\x60\x60\x60(?:json)?\s*([\s\S]*?)\s*\x60\x60\x60$/i,
+  );
+  const candidate = fenced?.[1] ?? trimmed;
+  return MissionPlanSchema.parse(JSON.parse(candidate));
+}
+
 const EXACT_CONTENT_MARKER = /\b(?:containing exactly|(?:entire\s+)?file content must be exactly)\s*:?\s*/i;
 const EXACT_CONTENT_CONTROL_BOUNDARY = /\s+(?=(?:publication requirement\s*:|publish changes?\b|do not (?:modify|change|deploy|commit|push|publish)\b))/i;
 
@@ -177,39 +186,87 @@ async function createPlannerModel() {
 }
 
 export async function createMissionPlan(request: string): Promise<MissionPlan> {
+  const model = await createPlannerModel();
+  const instructions = [
+    "You convert software-company requests into small, auditable action plans.",
+    "Never invent credentials or request raw secrets.",
+    "Never hide production-impacting work inside a lower-risk action.",
+    "Prefer reversible steps, staging, testing, and explicit targets.",
+    "Use delete_production_data, change_auth, change_billing, or access_raw_secret only when truly required.",
+    "Every action in actions means work that WILL execute. Omit negated, hypothetical, informational, or no-op actions.",
+    "Never add an action whose summary says that the action is not required, not needed, or will not be performed.",
+    "Repository file creation, edits, or deletion—including docs, source, tests, config, and workflow files—must use modify_code.",
+    "When a repository-file request explicitly specifies exact literal full-file content, set expectedContent to only that literal content.",
+    "Keep publication, testing, review, deployment, and workflow instructions out of expectedContent unless the user explicitly includes them in the literal file content.",
+    "Set expectedContent to null when exact literal full-file content is not specified; always return this field.",
+    "Never use database action kinds for repository files. write_production_db means changing live production database data, not files.",
+  ].join(" ");
+  const jsonInstructions = [
+    instructions,
+    "Return exactly one JSON object and nothing else.",
+    "The object must have keys summary, category, actions.",
+    "Each action must have kind, summary, expectedContent, target, reversible.",
+    "expectedContent must be a JSON string or null. reversible must be a JSON boolean.",
+    "Do not return Markdown, code fences, or prose outside the JSON object.",
+  ].join(" ");
   const planner = new Agent({
     name: "Mission Control Planner",
-    model: await createPlannerModel(),
-    instructions: [
-      "You convert software-company requests into small, auditable action plans.",
-      "Never invent credentials or request raw secrets.",
-      "Never hide production-impacting work inside a lower-risk action.",
-      "Prefer reversible steps, staging, testing, and explicit targets.",
-      "Use delete_production_data, change_auth, change_billing, or access_raw_secret only when truly required.",
-      "Every action in actions means work that WILL execute. Omit negated, hypothetical, informational, or no-op actions.",
-      "Never add an action whose summary says that the action is not required, not needed, or will not be performed.",
-      "Repository file creation, edits, or deletion—including docs, source, tests, config, and workflow files—must use modify_code.",
-      "When a repository-file request explicitly specifies exact literal full-file content, set expectedContent to only that literal content.",
-      "Keep publication, testing, review, deployment, and workflow instructions out of expectedContent unless the user explicitly includes them in the literal file content.",
-      "Set expectedContent to null when exact literal full-file content is not specified; always return this field.",
-      "Never use database action kinds for repository files. write_production_db means changing live production database data, not files.",
-    ].join(" "),
-    outputType: MissionPlanSchema,
+    model,
+    instructions: jsonInstructions,
   });
 
   return retryPlannerOperation(async () => {
     const signal = AbortSignal.timeout(PLANNER_ATTEMPT_TIMEOUT_MS);
-    const result = await (async () => {
+    let result;
+    try {
+      result = await run(planner, request, { signal });
+    } catch (error) {
+      if (signal.aborted) {
+        throw new PlannerTimeoutError(PLANNER_ATTEMPT_TIMEOUT_MS);
+      }
+      throw error;
+    }
+
+    if (typeof result.finalOutput !== "string") {
+      throw new Error("Planner output was not text");
+    }
+
+    let parsed: MissionPlan;
+    try {
+      parsed = parseMissionPlanJson(result.finalOutput);
+    } catch {
+      const recoveryPlanner = new Agent({
+        name: "Mission Control Planner JSON Recovery",
+        model,
+        instructions: [
+          jsonInstructions,
+          "Repair the supplied invalid output into valid JSON matching the required object shape.",
+          "Return the repaired JSON object only.",
+        ].join(" "),
+      });
+      let recovery;
       try {
-        return await run(planner, request, { signal });
+        recovery = await run(
+          recoveryPlanner,
+          JSON.stringify({
+            request,
+            invalidOutput: result.finalOutput,
+          }),
+          { signal },
+        );
       } catch (error) {
         if (signal.aborted) {
           throw new PlannerTimeoutError(PLANNER_ATTEMPT_TIMEOUT_MS);
         }
         throw error;
       }
-    })();
-    const sanitized = sanitizeMissionPlan(MissionPlanSchema.parse(result.finalOutput));
+      if (typeof recovery.finalOutput !== "string") {
+        throw new Error("Planner recovery output was not text");
+      }
+      parsed = parseMissionPlanJson(recovery.finalOutput);
+    }
+
+    const sanitized = sanitizeMissionPlan(parsed);
     return applyDeterministicExactContent(request, sanitized);
   });
 }
