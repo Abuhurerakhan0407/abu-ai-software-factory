@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { FactoryAutopilot } from "../src/autopilot/factory-autopilot.js";
+import {
+  FactoryAutopilot,
+  isStaleAutonomousExecution,
+} from "../src/autopilot/factory-autopilot.js";
 import type { PlannedAction } from "../src/contracts/task.js";
 import {
   MissionExecutor,
@@ -183,6 +186,57 @@ describe("FactoryAutopilot", () => {
     expect(result.nextAction).toBe("human_review");
     expect(result.task.audit.at(-1)?.detail).toContain(
       "AI planning quota exhausted",
+    );
+  });
+
+  it("fails closed when interrupted execution becomes stale", async () => {
+    const tasks = new MemoryTaskStore();
+    const control = new MissionControl(tasks);
+    const received = await control.intake({
+      title: "Modify one test",
+      description: "Modify one test safely",
+      requestedBy: "Abu",
+      category: "feature",
+    });
+    await control.addPlan(received.id, [{
+      id: "1-modify_code",
+      kind: "modify_code",
+      summary: "Modify one test",
+      target: "tests/example.test.ts",
+      reversible: true,
+    }]);
+    const executing = await control.transition(
+      received.id,
+      "executing",
+      "mission_control",
+      "Autonomous execution started",
+    );
+    const stale = {
+      ...executing,
+      updatedAt: new Date(Date.now() - 7 * 60_000).toISOString(),
+    };
+    expect(isStaleAutonomousExecution(stale)).toBe(true);
+    await tasks.upsert(stale);
+
+    const autopilot = new FactoryAutopilot(
+      tasks,
+      async () => {
+        throw new Error("planner must not run");
+      },
+      async () => {
+        throw new Error("executor must not resume stale work");
+      },
+      async () => {
+        throw new Error("monitor must not run");
+      },
+    );
+
+    const result = await autopilot.run({ taskId: received.id });
+
+    expect(result.task.status).toBe("failed");
+    expect(result.nextAction).toBe("human_review");
+    expect(result.task.audit.at(-1)?.detail).toContain(
+      "Stale autonomous execution exceeded runtime limit",
     );
   });
 

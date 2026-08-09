@@ -1,6 +1,7 @@
 import { Agent, run } from "@openai/agents";
 import { OpenAIProvider } from "@openai/agents-openai";
 import { z } from "zod";
+import { withAgentModelTimeout } from "./model-timeout.js";
 import type {
   AgentRole,
   PlannedAction,
@@ -71,16 +72,18 @@ export async function runAnalysisWorker(
     outputType: AgentWorkResultSchema,
   });
 
-  const result = await run(worker, JSON.stringify({
-    task: {
-      title: task.title,
-      description: task.description,
-      category: task.category,
-      risk: task.risk,
-    },
-    action,
-    repositoryContext,
-  }));
+  return withAgentModelTimeout("Analysis worker", async (signal) => {
+    const result = await run(worker, JSON.stringify({
+      task: {
+        title: task.title,
+        description: task.description,
+        category: task.category,
+        risk: task.risk,
+      },
+      action,
+      repositoryContext,
+    }), { signal });
 
-  return AgentWorkResultSchema.parse(result.finalOutput);
+    return AgentWorkResultSchema.parse(result.finalOutput);
+  });
 }
