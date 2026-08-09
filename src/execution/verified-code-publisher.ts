@@ -10,6 +10,26 @@ import {
 } from "../agents/repair-worker.js";
 import type { CodeWorkResult } from "../agents/code-worker.js";
 import type { PlannedAction, TaskRecord } from "../contracts/task.js";
+
+const MAX_REPAIR_ATTEMPTS = 2;
+const MAX_FAILURE_DETAIL_CHARS = 500;
+
+function verificationFailureMessage(verification: SandboxVerification): string {
+  const failed = [...verification.checks].reverse()
+    .find((check) => check.exitCode !== 0);
+  if (!failed) return verification.summary;
+
+  const detail = (failed.stderr.trim() || failed.stdout.trim())
+    .replace(/postgres(?:ql)?:\/\/\S+/gi, "[redacted-database-url]")
+    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+    .replace(/\b(?:sk|gh[opsu]|vcp|vcs)_[A-Za-z0-9_-]{8,}\b/g, "[redacted-token]")
+    .replace(/\s+/g, " ")
+    .slice(0, MAX_FAILURE_DETAIL_CHARS);
+
+  return detail
+    ? verification.summary + ": " + detail
+    : verification.summary;
+}
 import {
   SafeCodePublisher,
   type CodePublication,
@@ -63,34 +83,52 @@ export class VerifiedCodePublisher {
       ref: staging.branch,
     });
     let repairAttempts = 0;
+    let repairWork = work;
     let reviewFiles: QaReviewFile[] = work.changes.map((change) => ({
       path: change.path,
       content: change.content,
     }));
 
-    if (!verification.passed && verification.repairable) {
-      const repair = await this.repairWorker(task, action, work, verification);
-      if (!repair.requiresHuman && repair.changes.length > 0) {
-        await this.publisher.applyRepair(task, staging, repair);
-        repairAttempts = 1;
-        const repaired = new Map(
-          repair.changes.map((change) => [change.path, change.content]),
-        );
-        reviewFiles = reviewFiles.map((file) => ({
-          path: file.path,
-          content: repaired.get(file.path) ?? file.content,
-        }));
-        verification = await this.verifier.verify({
-          repository: staging.repository,
-          ref: staging.branch,
-        });
-      }
+    while (
+      !verification.passed
+      && verification.repairable
+      && repairAttempts < MAX_REPAIR_ATTEMPTS
+    ) {
+      const repair = await this.repairWorker(
+        task,
+        action,
+        repairWork,
+        verification,
+      );
+      if (repair.requiresHuman || repair.changes.length === 0) break;
+
+      await this.publisher.applyRepair(task, staging, repair);
+      repairAttempts += 1;
+      const repaired = new Map(
+        repair.changes.map((change) => [change.path, change.content]),
+      );
+      reviewFiles = reviewFiles.map((file) => ({
+        path: file.path,
+        content: repaired.get(file.path) ?? file.content,
+      }));
+      repairWork = {
+        ...repairWork,
+        summary: repair.summary,
+        changes: repairWork.changes.map((change) => ({
+          ...change,
+          content: repaired.get(change.path) ?? change.content,
+        })),
+      };
+      verification = await this.verifier.verify({
+        repository: staging.repository,
+        ref: staging.branch,
+      });
     }
 
     if (!verification.passed) {
       throw new VerifiedCodePublishError(
         repairAttempts > 0 ? "repair_failed" : "sandbox_failed",
-        verification.summary,
+        verificationFailureMessage(verification),
       );
     }
 
