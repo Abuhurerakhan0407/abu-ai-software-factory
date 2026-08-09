@@ -1,6 +1,7 @@
 import { Agent, run } from "@openai/agents";
 import { OpenAIProvider } from "@openai/agents-openai";
 import { z } from "zod";
+import { withAgentModelTimeout } from "./model-timeout.js";
 import type { PlannedAction, TaskRecord } from "../contracts/task.js";
 import type { RepositoryContextFile } from "../github/repository-context.js";
 
@@ -159,31 +160,33 @@ export async function runCodeWorker(
     instructions: jsonInstructions,
   });
 
-  const result = await run(worker, input);
-  if (typeof result.finalOutput !== "string") {
-    throw new Error("Code worker output was not text");
-  }
-
-  try {
-    return parseCodeWorkJson(result.finalOutput);
-  } catch {
-    const recoveryWorker = new Agent({
-      name: "Factory Code Worker JSON Recovery",
-      model,
-      instructions: [
-        jsonInstructions,
-        "Repair the supplied invalid output into valid JSON matching the required object shape.",
-        "Return the repaired JSON object only.",
-      ].join(" "),
-    });
-    const recoveryInput = JSON.stringify({
-      originalInput: input,
-      invalidOutput: result.finalOutput,
-    });
-    const recovery = await run(recoveryWorker, recoveryInput);
-    if (typeof recovery.finalOutput !== "string") {
-      throw new Error("Recovery output was not text");
+  return withAgentModelTimeout("Code worker", async (signal) => {
+    const result = await run(worker, input, { signal });
+    if (typeof result.finalOutput !== "string") {
+      throw new Error("Code worker output was not text");
     }
-    return parseCodeWorkJson(recovery.finalOutput);
-  }
+
+    try {
+      return parseCodeWorkJson(result.finalOutput);
+    } catch {
+      const recoveryWorker = new Agent({
+        name: "Factory Code Worker JSON Recovery",
+        model,
+        instructions: [
+          jsonInstructions,
+          "Repair the supplied invalid output into valid JSON matching the required object shape.",
+          "Return the repaired JSON object only.",
+        ].join(" "),
+      });
+      const recoveryInput = JSON.stringify({
+        originalInput: input,
+        invalidOutput: result.finalOutput,
+      });
+      const recovery = await run(recoveryWorker, recoveryInput, { signal });
+      if (typeof recovery.finalOutput !== "string") {
+        throw new Error("Recovery output was not text");
+      }
+      return parseCodeWorkJson(recovery.finalOutput);
+    }
+  });
 }
