@@ -1,7 +1,11 @@
 import { Agent, run } from "@openai/agents";
 import { OpenAIProvider } from "@openai/agents-openai";
 import { z } from "zod";
-import { ActionKindSchema, TaskCategorySchema } from "../contracts/task.js";
+import {
+  ActionKindSchema,
+  TaskCategorySchema,
+  type TaskCategory,
+} from "../contracts/task.js";
 
 export const MissionPlanSchema = z.object({
   summary: z.string().min(3).max(600),
@@ -69,13 +73,67 @@ export function isPlannerQuotaError(error: unknown): boolean {
   return /free-models-per-day|rate limit exceeded/i.test(message);
 }
 
+const PLANNER_CATEGORY_ALIASES: Readonly<Record<string, TaskCategory>> = {
+  enhancement: "feature",
+  code: "feature",
+  test: "feature",
+  tests: "feature",
+  testing: "feature",
+  qa: "feature",
+  bugfix: "bug",
+  fix: "bug",
+  error: "bug",
+  documentation: "docs",
+  document: "docs",
+  readme: "docs",
+  auth: "security",
+  authentication: "security",
+  authorization: "security",
+  secret: "security",
+  secrets: "security",
+  vulnerability: "security",
+  db: "database",
+  data: "database",
+  migration: "database",
+  deploy: "deployment",
+  release: "deployment",
+  production: "deployment",
+  devops: "deployment",
+  sre: "deployment",
+  outage: "incident",
+  emergency: "incident",
+  rollback: "incident",
+  analysis: "other",
+  general: "other",
+  maintenance: "other",
+};
+
+export function normalizePlannerCategory(value: unknown): TaskCategory {
+  const normalized = typeof value === "string"
+    ? value.trim().toLowerCase().replace(/[\s-]+/g, "_")
+    : "";
+  const direct = TaskCategorySchema.safeParse(normalized);
+  if (direct.success) return direct.data;
+  return PLANNER_CATEGORY_ALIASES[normalized] ?? "other";
+}
+
 export function parseMissionPlanJson(output: string): MissionPlan {
   const trimmed = output.trim();
   const fenced = trimmed.match(
     /^\x60\x60\x60(?:json)?\s*([\s\S]*?)\s*\x60\x60\x60$/i,
   );
   const candidate = fenced?.[1] ?? trimmed;
-  return MissionPlanSchema.parse(JSON.parse(candidate));
+  const decoded: unknown = JSON.parse(candidate);
+  if (typeof decoded !== "object" || decoded === null || Array.isArray(decoded)) {
+    return MissionPlanSchema.parse(decoded);
+  }
+
+  return MissionPlanSchema.parse({
+    ...decoded,
+    category: normalizePlannerCategory(
+      (decoded as Record<string, unknown>).category,
+    ),
+  });
 }
 
 const EXACT_CONTENT_MARKER = /\b(?:containing exactly|(?:entire\s+)?file content must be exactly)\s*:?\s*/i;
@@ -205,6 +263,7 @@ export async function createMissionPlan(request: string): Promise<MissionPlan> {
     instructions,
     "Return exactly one JSON object and nothing else.",
     "The object must have keys summary, category, actions.",
+    "category must be exactly one of feature, bug, docs, security, database, deployment, incident, other.",
     "Each action must have kind, summary, expectedContent, target, reversible.",
     "expectedContent must be a JSON string or null. reversible must be a JSON boolean.",
     "Do not return Markdown, code fences, or prose outside the JSON object.",
