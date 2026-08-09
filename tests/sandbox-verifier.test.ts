@@ -89,6 +89,7 @@ describe("SandboxVerifier", () => {
     expect(result.passed).toBe(false);
     expect(result.repairable).toBe(true);
     expect(result.summary).toContain("test failed");
+    expect(result.repositoryPaths).toEqual(["package.json", "src/index.ts"]);
     expect(isolated.stop).toHaveBeenCalledOnce();
   });
 
