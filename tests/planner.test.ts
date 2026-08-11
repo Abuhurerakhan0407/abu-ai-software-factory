@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   applyDeterministicExactContent,
+  createDeterministicReadOnlyAnalysisPlan,
   normalizePlannerCategory,
   parseMissionPlanJson,
   PlannerTimeoutError,
@@ -89,6 +90,36 @@ describe("sanitizeMissionPlan", () => {
         reversible: true,
       },
     ]))).toThrow("Planner returned no executable actions");
+  });
+});
+
+describe("createDeterministicReadOnlyAnalysisPlan", () => {
+  it("creates one analyze action for an explicit read-only file request", () => {
+    expect(createDeterministicReadOnlyAnalysisPlan(
+      "Analyze README architecture only. Do not modify files.",
+    )).toEqual({
+      summary: "Analyze README.md without modifying repository files",
+      category: "docs",
+      actions: [{
+        kind: "analyze",
+        summary: "Analyze README.md and return findings",
+        expectedContent: null,
+        target: "README.md",
+        reversible: false,
+      }],
+    });
+  });
+
+  it("does not intercept requests without an explicit repository file", () => {
+    expect(createDeterministicReadOnlyAnalysisPlan(
+      "Analyze repository architecture without modifications.",
+    )).toBeUndefined();
+  });
+
+  it("does not intercept mutation requests", () => {
+    expect(createDeterministicReadOnlyAnalysisPlan(
+      "Update README.md and analyze its architecture.",
+    )).toBeUndefined();
   });
 });
 

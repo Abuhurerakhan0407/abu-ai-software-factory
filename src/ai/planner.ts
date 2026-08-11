@@ -44,6 +44,10 @@ const NO_OP_ACTION_SUMMARY = [
 
 const REPOSITORY_FILE_TARGET = /^(?:\.github|api|docs|migrations|src|tests)\//i;
 
+const READ_ONLY_ANALYSIS_INTENT = /\b(?:analy[sz]e|inspect|review|examine|summari[sz]e)\b/i;
+const READ_ONLY_CONSTRAINT = /\b(?:read[- ]only|do not (?:modify|change|edit|write|delete)|without (?:any )?(?:modifications?|changes?)|findings only)\b/i;
+const REPOSITORY_FILE_REFERENCE = /\b(README(?:\.md)?|(?:api|docs|migrations|src|tests)\/[A-Za-z0-9][A-Za-z0-9._/-]*|[A-Za-z0-9][A-Za-z0-9._/-]*\.(?:md|mdx|ts|tsx|js|jsx|json|yml|yaml|sql))\b/i;
+
 const PLANNER_MAX_ATTEMPTS = 3;
 const PLANNER_ATTEMPT_TIMEOUT_MS = 60_000;
 
@@ -138,6 +142,33 @@ export function parseMissionPlanJson(output: string): MissionPlan {
 
 const EXACT_CONTENT_MARKER = /\b(?:containing exactly|(?:entire\s+)?file content must be exactly)\s*:?\s*/i;
 const EXACT_CONTENT_CONTROL_BOUNDARY = /\s+(?=(?:publication requirement\s*:|publish changes?\b|do not (?:modify|change|deploy|commit|push|publish)\b))/i;
+
+export function createDeterministicReadOnlyAnalysisPlan(
+  request: string,
+): MissionPlan | undefined {
+  if (
+    !READ_ONLY_ANALYSIS_INTENT.test(request)
+    || !READ_ONLY_CONSTRAINT.test(request)
+  ) {
+    return undefined;
+  }
+
+  const match = REPOSITORY_FILE_REFERENCE.exec(request);
+  if (!match?.[1]) return undefined;
+
+  const target = /^README$/i.test(match[1]) ? "README.md" : match[1];
+  return {
+    summary: "Analyze " + target + " without modifying repository files",
+    category: /\.(?:md|mdx)$/i.test(target) ? "docs" : "other",
+    actions: [{
+      kind: "analyze",
+      summary: "Analyze " + target + " and return findings",
+      expectedContent: null,
+      target,
+      reversible: false,
+    }],
+  };
+}
 
 export function applyDeterministicExactContent(
   request: string,
@@ -255,6 +286,9 @@ async function createPlannerModel() {
 }
 
 export async function createMissionPlan(request: string): Promise<MissionPlan> {
+  const deterministicAnalysis = createDeterministicReadOnlyAnalysisPlan(request);
+  if (deterministicAnalysis) return deterministicAnalysis;
+
   const model = await createPlannerModel();
   const instructions = [
     "You convert software-company requests into small, auditable action plans.",
