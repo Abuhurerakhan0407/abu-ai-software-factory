@@ -30,7 +30,7 @@ describe("parseMissionPlanJson whitespace handling", () => {
   });
 
   it("handles messy whitespace within markdown fences", () => {
-    const input = `\x60\x60\x60  json  \n${JSON.stringify(validPlan)}  \x60\x60\x60`;
+    const input = `\`\`\`  json  \n${JSON.stringify(validPlan)}\n\`\`\``;
     expect(parseMissionPlanJson(input)).toEqual(validPlan);
   });
 });
