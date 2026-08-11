@@ -202,7 +202,7 @@ describe("VerifiedCodePublisher", () => {
     expect(gateway.openDraftPullRequest).not.toHaveBeenCalled();
   });
 
-  it("allows one bounded second repair before opening a draft PR", async () => {
+  it("stops after one bounded repair when sandbox still fails", async () => {
     const { gateway, publisher } = await setup();
     const failedVerification = {
       passed: false,
@@ -218,51 +218,30 @@ describe("VerifiedCodePublisher", () => {
       repositoryPaths: ["src/ai/planner.ts", "tests/planner.test.ts"],
     };
     const verifier = {
-      verify: vi.fn()
-        .mockResolvedValueOnce(failedVerification)
-        .mockResolvedValueOnce(failedVerification)
-        .mockResolvedValueOnce({
-          passed: true,
-          repairable: false,
-          summary: "Isolated sandbox checks passed",
-          checks: [{
-            label: "typecheck" as const,
-            command: "npm run typecheck",
-            exitCode: 0,
-            stdout: "",
-            stderr: "",
-          }],
-        }),
+      verify: vi.fn(async () => failedVerification),
     };
-    const repair = vi.fn()
-      .mockResolvedValueOnce({
-        summary: "First bounded repair",
-        changes: [{
-          path: "src/dashboard.ts",
-          content: "export const dashboard = 1;\n",
-        }],
-        requiresHuman: false,
-      })
-      .mockResolvedValueOnce({
-        summary: "Second bounded repair",
-        changes: [{
-          path: "src/dashboard.ts",
-          content: "export const dashboard = true as const;\n",
-        }],
-        requiresHuman: false,
-      });
+    const repair = vi.fn(async () => ({
+      summary: "One bounded repair",
+      changes: [{
+        path: "src/dashboard.ts",
+        content: "export const dashboard = true as const;\n",
+      }],
+      requiresHuman: false,
+    }));
 
-    const publication = await new VerifiedCodePublisher(
+    await expect(new VerifiedCodePublisher(
       publisher,
       verifier,
       repair,
       passingQa,
-    ).publish(task, action, work);
+    ).publish(task, action, work)).rejects.toMatchObject({
+      code: "repair_failed",
+    });
 
-    expect(verifier.verify).toHaveBeenCalledTimes(3);
-    expect(repair).toHaveBeenCalledTimes(2);
-    expect(gateway.writeFile).toHaveBeenCalledTimes(3);
-    expect(publication.verification?.repairAttempts).toBe(2);
+    expect(verifier.verify).toHaveBeenCalledTimes(2);
+    expect(repair).toHaveBeenCalledOnce();
+    expect(gateway.writeFile).toHaveBeenCalledTimes(2);
+    expect(gateway.openDraftPullRequest).not.toHaveBeenCalled();
   });
 
   it("surfaces bounded sandbox diagnostics when repair cannot continue", async () => {
