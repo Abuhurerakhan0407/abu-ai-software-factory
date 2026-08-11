@@ -11,7 +11,7 @@ import {
 import type { CodeWorkResult } from "../agents/code-worker.js";
 import type { PlannedAction, TaskRecord } from "../contracts/task.js";
 
-const MAX_REPAIR_ATTEMPTS = 2;
+const MAX_REPAIR_ATTEMPTS = 1;
 const MAX_FAILURE_DETAIL_CHARS = 500;
 
 function verificationFailureMessage(verification: SandboxVerification): string {

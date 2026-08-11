@@ -5,6 +5,7 @@ import { createMissionPlan } from "../src/ai/planner.js";
 import {
   AutopilotError,
   FactoryAutopilot,
+  isStaleAutonomousExecution,
 } from "../src/autopilot/factory-autopilot.js";
 import { StagingDatabaseGate } from "../src/database/staging-database-gate.js";
 import { ProductionDeploymentGate } from "../src/deployment/production-deployment-gate.js";
@@ -16,6 +17,7 @@ import { SafeRepositoryNavigator } from "../src/github/safe-repository-navigator
 import { SafeRepositoryReader } from "../src/github/safe-repository-reader.js";
 import { SourceAwareRepositoryContext } from "../src/github/source-context.js";
 import { MissionExecutor } from "../src/mission-control/executor.js";
+import { MissionControl } from "../src/mission-control/mission-control.js";
 import { getProductionAgentRunStore } from "../src/store/postgres-agent-run-store.js";
 import { getProductionProjectStore } from "../src/store/postgres-project-store.js";
 import { getProductionTaskStore } from "../src/store/postgres-task-store.js";
@@ -64,8 +66,18 @@ export async function GET(request: Request): Promise<Response> {
   );
   if (!parsedTaskId.success) return json({ error: "invalid_task_id" }, 400);
 
-  const task = await getProductionTaskStore().get(parsedTaskId.data);
+  const tasks = getProductionTaskStore();
+  let task = await tasks.get(parsedTaskId.data);
   if (!task) return json({ error: "task_not_found" }, 404);
+
+  if (isStaleAutonomousExecution(task)) {
+    task = await new MissionControl(tasks).transition(
+      task.id,
+      "failed",
+      "execution_engine",
+      "Stale autonomous execution exceeded runtime limit; polling closed it automatically",
+    );
+  }
 
   return json({
     ok: true,

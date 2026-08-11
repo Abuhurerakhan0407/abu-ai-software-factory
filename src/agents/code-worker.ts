@@ -132,6 +132,7 @@ export async function runCodeWorker(
     "For updates, copy sourceSha exactly from repository context.",
     "Create new files only when necessary and never invent a sourceSha for them.",
     "Never invent local import paths. Reuse exact import specifiers and data shapes from repositoryContext; for new tests, mirror adjacent tests.",
+    "Honor requested test count exactly. When the task requests one focused test, return exactly one test or it case.",
     "Never edit secret files, dotfiles, GitHub workflows, lockfiles, authentication, billing, deployment, or database migration files.",
     "Never embed credentials, tokens, private keys, passwords, or environment values.",
     "Limit changes to five files.",
