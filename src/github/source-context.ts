@@ -18,7 +18,9 @@ const MAX_CHARS_PER_FILE = 12_000;
 const MAX_SOURCE_FILE_BYTES = 256 * 1024;
 
 const BOOTSTRAP_PATHS = ["README.md", "package.json"] as const;
-const SOURCE_PREFIXES = ["src/", "app/", "api/", "lib/", "server/", "client/"] as const;
+const SOURCE_PREFIXES = [
+  "src/", "app/", "api/", "lib/", "server/", "client/", "tests/",
+] as const;
 const IGNORED_SEGMENTS = new Set([
   "node_modules",
   "dist",
@@ -37,9 +39,11 @@ const TEXT_EXTENSIONS = [
 ] as const;
 
 const STOP_WORDS = new Set([
-  "about", "after", "again", "agent", "analyze", "build", "change",
-  "code", "create", "from", "into", "make", "modify", "project",
-  "repository", "review", "task", "that", "this", "with",
+  "about", "accepts", "after", "again", "agent", "analyze", "build",
+  "change", "code", "create", "file", "files", "focused", "from",
+  "into", "js", "json", "jsx", "make", "modify", "mjs", "one",
+  "only", "project", "repository", "review", "task", "test", "tests",
+  "that", "this", "ts", "tsx", "valid", "verify", "verifying", "with",
 ]);
 
 type RepositoryReader = Pick<SafeRepositoryReader, "read">;
@@ -52,19 +56,25 @@ export class SourceRepositoryContextError extends Error {
   }
 }
 
+function splitTaskTerms(value: string): string[] {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 3 && !STOP_WORDS.has(term));
+}
+
 function taskTerms(task: TaskRecord, action: PlannedAction): string[] {
-  const text = [
+  const values = [
     task.title,
     task.description,
     action.summary,
     action.target,
-  ].join(" ").toLowerCase();
+  ];
 
   return [...new Set(
-    text
-      .split(/[^a-z0-9_-]+/)
-      .map((term) => term.trim())
-      .filter((term) => term.length >= 3 && !STOP_WORDS.has(term)),
+    values.flatMap((value) => splitTaskTerms(value)),
   )].slice(0, 24);
 }
 
