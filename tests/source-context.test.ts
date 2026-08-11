@@ -75,6 +75,59 @@ describe("SourceAwareRepositoryContext", () => {
       .toBeLessThanOrEqual(48_000);
   });
 
+  it("splits camelCase and hyphenated terms for adjacent test context", async () => {
+    const modifyAction = {
+      id: "modify-planner-test",
+      kind: "modify_code",
+      summary: "Create tests/planner-whitespace.test.ts for parseMissionPlanJson",
+      target: "tests/planner-whitespace.test.ts",
+      reversible: true,
+    } satisfies PlannedAction;
+    const modifyTask = {
+      ...task,
+      title: "Create planner whitespace test",
+      description: "Verify parseMissionPlanJson accepts valid JSON surrounded by whitespace",
+      category: "feature",
+      plan: [modifyAction],
+    } satisfies TaskRecord;
+    const sourceTree = {
+      ...tree(),
+      entries: [
+        { path: "src/ai/planner.ts", type: "blob" as const, sha: "1", size: 100 },
+        {
+          path: "src/mission-control/mission-control.ts",
+          type: "blob" as const,
+          sha: "2",
+          size: 100,
+        },
+        { path: "tests/planner.test.ts", type: "blob" as const, sha: "3", size: 100 },
+        { path: "src/unrelated.ts", type: "blob" as const, sha: "4", size: 100 },
+        { path: "README.md", type: "blob" as const, sha: "5", size: 100 },
+        { path: "package.json", type: "blob" as const, sha: "6", size: 100 },
+      ],
+    };
+    const navigator = { list: vi.fn(async () => sourceTree) };
+    const reader = {
+      read: vi.fn(async (input: { projectId: string; path: string; ref: string }) => ({
+        projectId: input.projectId,
+        repository: "Abuhurerakhan0407/abu-ai-software-factory",
+        path: input.path,
+        ref: input.ref,
+        sha: "sha-" + input.path,
+        content: "context for " + input.path,
+      })),
+    };
+
+    const context = await new SourceAwareRepositoryContext(reader, navigator)
+      .load(modifyTask, modifyAction);
+
+    expect(context.slice(0, 3).map((file) => file.path)).toEqual([
+      "src/ai/planner.ts",
+      "tests/planner.test.ts",
+      "src/mission-control/mission-control.ts",
+    ]);
+  });
+
   it("redacts common secret forms before model context", () => {
     const content = [
       'const apiKey = "supersecretvalue123";',
