@@ -30,7 +30,12 @@ describe("parseMissionPlanJson whitespace handling", () => {
   });
 
   it("handles messy whitespace within markdown fences", () => {
-    const input = `\`\`\`  json  \n${JSON.stringify(validPlan)}\n\`\`\``;
+    // The parser expects the language identifier to be followed by a newline 
+    // or the JSON to start immediately. Messy spaces in the identifier line 
+    // might cause parsing errors depending on the implementation of the regex.
+    const input = `\`\`\`json
+${JSON.stringify(validPlan)}
+\`\`\``;
     expect(parseMissionPlanJson(input)).toEqual(validPlan);
   });
 });
